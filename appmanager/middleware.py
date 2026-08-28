@@ -288,6 +288,9 @@ class DynamicAppDispatcherMiddleware:
                             link_text="Return to Home",
                         )
 
+                    # Build SEO tags inside the app context (needs DB + host settings).
+                    seo_tags = self._build_seo_tags(app_record, user)
+
                 # Rewrite SCRIPT_NAME and PATH_INFO for WSGI sub-app routing
                 prefix = f"/apps/{slug}"
                 environ["SCRIPT_NAME"] = environ.get("SCRIPT_NAME", "") + prefix
@@ -296,7 +299,159 @@ class DynamicAppDispatcherMiddleware:
                     new_path_info = "/"
                 environ["PATH_INFO"] = new_path_info
 
+                # Wrap the sub-app response to inject SEO metadata into HTML.
+                if seo_tags:
+                    return self._dispatch_with_seo(
+                        wsgi_callable, environ, start_response, seo_tags
+                    )
+
                 return wsgi_callable(environ, start_response)
 
         # Fall through to master AppManager Flask app
         return self.main_app(environ, start_response)
+
+    def _build_seo_tags(self, app_record, user) -> str:
+        """
+        Build the HTML string of SEO tags to inject into a sub-app's ``<head>``.
+
+        Returns an empty string when SEO is disabled or the app declares no SEO
+        metadata. Auth-required apps get ``noindex`` forced when the
+        ``seo_auth_apps_noindex`` host setting is on.
+        """
+        try:
+            from appmanager.host_settings import get_host_setting
+        except Exception:
+            return ""
+
+        if not get_host_setting("seo_enabled", True):
+            return ""
+
+        seo = app_record.get_seo()
+        if not seo:
+            return ""
+
+        tags = []
+        title = seo.get("title") or app_record.name
+        if title:
+            tags.append(f"<title>{self._esc(title)}</title>")
+        if seo.get("description"):
+            tags.append(f'<meta name="description" content="{self._esc(seo["description"])}">')
+        if seo.get("keywords"):
+            kw = ", ".join(seo["keywords"])
+            tags.append(f'<meta name="keywords" content="{self._esc(kw)}">')
+        if seo.get("canonical_url"):
+            tags.append(f'<link rel="canonical" href="{self._esc(seo["canonical_url"])}">')
+        if seo.get("og_image"):
+            tags.append(f'<meta property="og:image" content="{self._esc(seo["og_image"])}">')
+            tags.append(f'<meta property="og:title" content="{self._esc(title)}">')
+            tags.append('<meta name="twitter:card" content="summary_large_image">')
+            tags.append(f'<meta name="twitter:image" content="{self._esc(seo["og_image"])}">')
+
+        # Robots: force noindex for auth-required apps when configured.
+        robots = seo.get("robots")
+        if app_record.requires_auth and get_host_setting("seo_auth_apps_noindex", True):
+            robots = "noindex,nofollow"
+        if robots:
+            tags.append(f'<meta name="robots" content="{self._esc(robots)}">')
+
+        if seo.get("json_ld"):
+            tags.append(f'<script type="application/ld+json">{seo["json_ld"]}</script>')
+
+        return "\n    ".join(tags)
+
+    @staticmethod
+    def _esc(value: str) -> str:
+        """Minimal HTML-escape for attribute/text injection."""
+        return (
+            str(value)
+            .replace("&", "&amp;")
+            .replace('"', "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    def _dispatch_with_seo(self, wsgi_callable, environ, start_response, seo_tags: str):
+        """
+        Call the sub-app, capture its HTML response, and inject SEO tags into
+        ``<head>`` (only for ``text/html`` responses, only when the tag isn't
+        already present).
+        """
+        captured_headers = {}
+        status_holder = {}
+
+        def wrapped_start_response(status, headers, exc_info=None):
+            status_holder["status"] = status
+            for k, v in headers:
+                captured_headers.setdefault(k.lower(), v)
+            return start_response(status, headers, exc_info)
+
+        body_chunks = []
+        try:
+            for chunk in wsgi_callable(environ, wrapped_start_response):
+                body_chunks.append(chunk)
+        except Exception:
+            # Fall back to the raw callable if wrapping fails.
+            return wsgi_callable(environ, start_response)
+
+        content_type = captured_headers.get("content-type", "")
+        if "text/html" in content_type:
+            body = b"".join(body_chunks)
+            try:
+                text = body.decode("utf-8")
+            except Exception:
+                text = body.decode("latin-1")
+            injected = self._inject_into_head(text, seo_tags)
+            if injected != text:
+                new_body = injected.encode("utf-8")
+                # Rebuild headers, updating Content-Length.
+                new_headers = []
+                for k, v in captured_headers.items():
+                    if k == "content-length":
+                        continue
+                    new_headers.append((k, v))
+                new_headers.append(("Content-Length", str(len(new_body))))
+                start_response(status_holder["status"], new_headers)
+                return [new_body]
+
+        # No injection needed; replay the original response.
+        start_response(status_holder["status"], list(captured_headers.items()))
+        return body_chunks
+
+    @staticmethod
+    def _inject_into_head(html: str, seo_tags: str) -> str:
+        """
+        Insert ``seo_tags`` right after the opening ``<head>`` tag, skipping any
+        tag that is already present in the document (avoid duplicates).
+        """
+        if not seo_tags:
+            return html
+        head_match = re.search(r"<head[^>]*>", html, re.IGNORECASE)
+        if not head_match:
+            return html
+        # Skip tags already present.
+        to_inject = []
+        for tag in seo_tags.split("\n    "):
+            marker = tag.split(" ")[0].lstrip("<")  # e.g. "title", "meta", "link"
+            if marker == "meta":
+                # Skip if a meta with the same name/property already exists.
+                name_match = re.search(r'(?:name|property)="([^"]+)"', tag)
+                if name_match:
+                    attr = name_match.group(1)
+                    if re.search(
+                        rf'(?:name|property)="{re.escape(attr)}"', html, re.IGNORECASE
+                    ):
+                        continue
+            elif marker == "title":
+                if re.search(r"<title[^>]*>", html, re.IGNORECASE):
+                    continue
+            elif marker == "link":
+                if re.search(r'<link[^>]*rel="canonical"', html, re.IGNORECASE):
+                    continue
+            elif marker == "script":
+                if re.search(r'<script[^>]*application/ld\+json', html, re.IGNORECASE):
+                    continue
+            to_inject.append(tag)
+        if not to_inject:
+            return html
+        insert_at = head_match.end()
+        return html[:insert_at] + "\n    " + "\n    ".join(to_inject) + html[insert_at:]

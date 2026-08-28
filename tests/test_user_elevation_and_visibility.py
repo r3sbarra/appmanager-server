@@ -191,14 +191,30 @@ def test_app_visibility_on_off_and_permissions(tmp_path):
     assert "App Three Restricted" in html
     assert "App Two Hidden" not in html
 
-    # 2. Member Dashboard ONLY sees App 1 (active & permitted), NOT App 2 (inactive) or App 3 (not permitted)
+    # 2. Member Dashboard: App 1 (active & permitted) shows Launch; App 3 (active,
+    #    not permitted) shows with a "Permission Required" button (visibility on by
+    #    default); App 2 (inactive) is hidden.
     client.set_cookie(JWT_COOKIE_NAME, member_token)
     res = client.get("/dashboard")
     assert res.status_code == 200
     member_html = res.get_data(as_text=True)
     assert "App One Visible" in member_html
     assert "App Two Hidden" not in member_html
-    assert "App Three Restricted" not in member_html
+    assert "App Three Restricted" in member_html
+    assert "Permission Required" in member_html
+
+    # 2b. With visibility off, App 3 (not permitted) is hidden entirely.
+    with app.app_context():
+        from appmanager.host_settings import set_host_setting
+
+        set_host_setting("visibility_show_auth_apps", False)
+    res = client.get("/dashboard")
+    member_html_off = res.get_data(as_text=True)
+    assert "App Three Restricted" not in member_html_off
+    with app.app_context():
+        from appmanager.host_settings import set_host_setting
+
+        set_host_setting("visibility_show_auth_apps", True)
 
     # 3. Toggle Admin permission for App 3 to True
     with app.app_context():
@@ -206,11 +222,12 @@ def test_app_visibility_on_off_and_permissions(tmp_path):
         p3_rec.can_access = True
         db.session.commit()
 
-    # Now member sees App 3
+    # Now member sees App 3 with a Launch button
     res = client.get("/dashboard")
     assert res.status_code == 200
     member_html2 = res.get_data(as_text=True)
     assert "App Three Restricted" in member_html2
+    assert "Permission Required" not in member_html2
 
     # 4. Toggle App 3 to Inactive (Off)
     with app.app_context():

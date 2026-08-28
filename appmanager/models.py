@@ -95,6 +95,14 @@ class InstalledApp(db.Model):
     )  # Target app slug if app_type is 'extension'
     has_web_ui = db.Column(db.Boolean, default=True, nullable=False)
     settings_json = db.Column(db.Text, nullable=True)
+    # Declarative SEO metadata (parsed from the manifest's ``seo`` block).
+    seo_title = db.Column(db.String(255), nullable=True)
+    seo_description = db.Column(db.Text, nullable=True)
+    seo_keywords = db.Column(db.Text, nullable=True)  # comma-separated
+    seo_canonical_url = db.Column(db.String(500), nullable=True)
+    seo_og_image = db.Column(db.String(500), nullable=True)
+    seo_robots = db.Column(db.String(50), nullable=True)
+    seo_json_ld = db.Column(db.Text, nullable=True)  # raw JSON-LD
 
     permissions = db.relationship("UserAppPermission", backref="app", cascade="all, delete-orphan")
 
@@ -113,6 +121,76 @@ class InstalledApp(db.Model):
 
         self.settings_json = json.dumps(settings_dict) if settings_dict is not None else None
 
+    def get_seo(self):
+        """
+        Return the app's SEO metadata as a dict (or None if none declared).
+
+        Mirrors the manifest ``seo`` block shape so the host can render it
+        directly. ``seo_keywords`` is split back into a list.
+        """
+        if not any(
+            [
+                self.seo_title,
+                self.seo_description,
+                self.seo_keywords,
+                self.seo_canonical_url,
+                self.seo_og_image,
+                self.seo_robots,
+                self.seo_json_ld,
+            ]
+        ):
+            return None
+        keywords = None
+        if self.seo_keywords:
+            keywords = [k.strip() for k in self.seo_keywords.split(",") if k.strip()]
+        return {
+            "title": self.seo_title,
+            "description": self.seo_description,
+            "keywords": keywords,
+            "canonical_url": self.seo_canonical_url,
+            "og_image": self.seo_og_image,
+            "robots": self.seo_robots,
+            "json_ld": self.seo_json_ld,
+        }
+
+    def set_seo(self, seo_dict):
+        """
+        Persist a manifest ``seo`` block (dict) onto the SEO columns.
+
+        Accepts None to clear all SEO fields. ``keywords`` (list or
+        comma-separated string) is flattened to a comma-separated string.
+        """
+        if not seo_dict:
+            self.seo_title = None
+            self.seo_description = None
+            self.seo_keywords = None
+            self.seo_canonical_url = None
+            self.seo_og_image = None
+            self.seo_robots = None
+            self.seo_json_ld = None
+            return
+        self.seo_title = seo_dict.get("title")
+        self.seo_description = seo_dict.get("description")
+        keywords = seo_dict.get("keywords")
+        if isinstance(keywords, list):
+            self.seo_keywords = ", ".join(keywords)
+        elif isinstance(keywords, str):
+            self.seo_keywords = keywords
+        else:
+            self.seo_keywords = None
+        self.seo_canonical_url = seo_dict.get("canonical_url")
+        self.seo_og_image = seo_dict.get("og_image")
+        self.seo_robots = seo_dict.get("robots")
+        json_ld = seo_dict.get("json_ld")
+        if isinstance(json_ld, (dict, list)):
+            import json
+
+            self.seo_json_ld = json.dumps(json_ld)
+        elif isinstance(json_ld, str):
+            self.seo_json_ld = json_ld
+        else:
+            self.seo_json_ld = None
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -130,6 +208,7 @@ class InstalledApp(db.Model):
             "target_app": self.target_app,
             "has_web_ui": self.has_web_ui,
             "settings": self.get_settings(),
+            "seo": self.get_seo(),
         }
 
 
@@ -382,4 +461,50 @@ class AppAdminPanel(db.Model):
             "icon": self.icon,
             "endpoint": self.endpoint,
             "sort_order": self.sort_order,
+        }
+
+
+class HostSetting(db.Model):
+    """
+    Typed host-level configuration store (distinct from per-app ``AppConfig``).
+
+    Holds AppManager-wide settings such as SEO defaults, dashboard/login
+    behavior, and app visibility. Each setting is a row keyed by name, so it is
+    queryable and safe for concurrent updates. Values are stored as JSON and
+    decoded on read.
+    """
+
+    __tablename__ = "host_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    value = db.Column(db.Text, nullable=True)  # JSON-encoded value
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    def get_value(self):
+        """Decode the stored JSON value into a Python object."""
+        import json
+
+        if self.value is None:
+            return None
+        try:
+            return json.loads(self.value)
+        except Exception:
+            return self.value
+
+    def set_value(self, val):
+        """Encode a Python value as JSON for storage."""
+        import json
+
+        self.value = json.dumps(val) if val is not None else None
+
+    def to_dict(self):
+        return {
+            "key": self.key,
+            "value": self.get_value(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

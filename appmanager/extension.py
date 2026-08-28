@@ -135,6 +135,17 @@ class AppManager:
     def _register_default_routes(self, app: Flask) -> None:
         @app.route("/")
         def index():
+            from appmanager.host_settings import (
+                get_default_app_slug,
+                get_host_setting,
+            )
+
+            # If the dashboard is disabled, redirect to the configured default app.
+            if not get_host_setting("dashboard_enabled", True):
+                default_slug = get_default_app_slug()
+                if default_slug:
+                    return redirect(f"/apps/{default_slug}/")
+
             default_app = InstalledApp.query.filter_by(is_default=True, is_active=True).first()
             if default_app:
                 if not default_app.requires_auth:
@@ -147,14 +158,23 @@ class AppManager:
 
         @app.route("/dashboard")
         def dashboard():
+            from appmanager.host_settings import (
+                build_portal_seo,
+                get_host_setting,
+            )
+
             user = get_current_user()
-            if not user:
+            login_required = get_host_setting("dashboard_login_required", True)
+            if login_required and not user:
                 return redirect(url_for("auth.login"))
 
-            if user.is_admin():
+            if user and user.is_admin():
                 accessible_apps = InstalledApp.query.filter_by(is_active=True).all()
-            else:
-                accessible_apps = (
+            elif user:
+                # Logged-in non-admin: apps the user can access, plus (when visibility
+                # is on) auth apps they lack permission for — shown with a
+                # "Permission Required" button.
+                permitted = (
                     default_db.session.query(InstalledApp)
                     .join(UserAppPermission, UserAppPermission.app_id == InstalledApp.id)
                     .filter(
@@ -164,7 +184,95 @@ class AppManager:
                     )
                     .all()
                 )
-            return render_template("index.html", user=user, apps=accessible_apps)
+                if get_host_setting("visibility_show_auth_apps", True):
+                    all_active = InstalledApp.query.filter_by(is_active=True).all()
+                    permitted_ids = {a.id for a in permitted}
+                    accessible_apps = permitted + [
+                        a for a in all_active if a.id not in permitted_ids
+                    ]
+                else:
+                    accessible_apps = permitted
+            else:
+                # Logged out: show public apps (auth apps appear only if visibility is on,
+                # with a "Login" button).
+                accessible_apps = InstalledApp.query.filter_by(
+                    is_active=True, requires_auth=False
+                ).all()
+                if get_host_setting("visibility_show_auth_apps", True):
+                    auth_apps = InstalledApp.query.filter_by(
+                        is_active=True, requires_auth=True
+                    ).all()
+                    accessible_apps = accessible_apps + auth_apps
+
+            # Visibility: optionally hide requires_auth apps from the listing.
+            show_auth_apps = get_host_setting("visibility_show_auth_apps", True)
+            if not show_auth_apps:
+                accessible_apps = [a for a in accessible_apps if not a.requires_auth]
+
+            # Per-app launch state for the visibility button labels.
+            app_states = {}
+            for a in accessible_apps:
+                if not a.requires_auth:
+                    app_states[a.slug] = "launch"
+                elif not user:
+                    app_states[a.slug] = "login"
+                elif user.is_admin():
+                    app_states[a.slug] = "launch"
+                else:
+                    perm = UserAppPermission.query.filter_by(
+                        user_id=user.id, app_id=a.id
+                    ).first()
+                    app_states[a.slug] = "launch" if (perm and perm.can_access) else "permission"
+
+            seo = build_portal_seo()
+            return render_template(
+                "index.html",
+                user=user,
+                apps=accessible_apps,
+                app_states=app_states,
+                seo=seo,
+            )
+
+        @app.route("/robots.txt")
+        def robots_txt():
+            from flask import Response
+
+            from appmanager.host_settings import get_host_setting
+
+            lines = ["User-agent: *", "Allow: /"]
+            if get_host_setting("seo_sitemap_enabled", True):
+                base = get_host_setting("seo_portal_canonical_base", "")
+                if base:
+                    lines.append(f"Sitemap: {base.rstrip('/')}/sitemap.xml")
+            return Response("\n".join(lines) + "\n", mimetype="text/plain")
+
+        @app.route("/sitemap.xml")
+        def sitemap_xml():
+            from flask import Response
+
+            from appmanager.host_settings import get_host_setting
+
+            if not get_host_setting("seo_sitemap_enabled", True):
+                return Response("", status=404, mimetype="application/xml")
+            base = get_host_setting("seo_portal_canonical_base", "")
+            if not base:
+                return Response("", status=404, mimetype="application/xml")
+            base = base.rstrip("/")
+            urls = [f"{base}/"]
+            for a in InstalledApp.query.filter_by(
+                is_active=True, has_web_ui=True, requires_auth=False
+            ).all():
+                urls.append(f"{base}/apps/{a.slug}/")
+            urlset = "\n".join(
+                f"  <url><loc>{u}</loc></url>" for u in urls
+            )
+            xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                f"{urlset}\n"
+                "</urlset>\n"
+            )
+            return Response(xml, mimetype="application/xml")
 
         @app.errorhandler(404)
         def not_found_error(error):

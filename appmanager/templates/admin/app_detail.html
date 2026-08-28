@@ -21,6 +21,7 @@
             <a href="#panel-maintenance" class="admin-nav-link" data-panel="maintenance">Updates &amp; Package</a>
             <a href="#panel-dependencies" class="admin-nav-link" data-panel="dependencies">Dependencies</a>
             <a href="#panel-permissions" class="admin-nav-link" data-panel="permissions">Permissions</a>
+            <a href="#panel-seo" class="admin-nav-link" data-panel="seo">SEO</a>
         </div>
         <div class="admin-nav-group">
             <div class="admin-nav-group-title">APP PANELS</div>
@@ -241,6 +242,68 @@
                             <button type="submit" class="btn btn-primary btn-sm">Save Permissions</button>
                         </div>
                     </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SEO PANEL ============ -->
+        <section class="tab-panel app-panel" id="panel-seo">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Search Engine Optimization</h2>
+                    <span class="badge badge-outline mono">manifest-declared</span>
+                </div>
+                <div class="card-body">
+                    {% set seo = app.get_seo() %}
+                    {% if seo %}
+                        <div class="grid grid-2 mb-3">
+                            <div>
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Title</div>
+                                <div style="font-weight:600; margin-top:2px;">{{ seo.title or app.name }}</div>
+                            </div>
+                            <div>
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Robots</div>
+                                <div style="margin-top:2px;">
+                                    {% if seo.robots %}<span class="badge badge-primary mono">{{ seo.robots }}</span>
+                                    {% else %}<span class="badge badge-outline mono">index,follow</span>{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% if seo.description %}
+                            <div class="mb-3">
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Description</div>
+                                <div style="margin-top:2px;">{{ seo.description }}</div>
+                            </div>
+                        {% endif %}
+                        {% if seo.keywords %}
+                            <div class="mb-3">
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Keywords</div>
+                                <div style="margin-top:2px;">
+                                    {% for kw in seo.keywords %}<span class="badge badge-outline mono" style="margin-right:4px;">{{ kw }}</span>{% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
+                        {% if seo.canonical_url %}
+                            <div class="mb-3">
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Canonical URL</div>
+                                <div class="mono" style="margin-top:2px;">{{ seo.canonical_url }}</div>
+                            </div>
+                        {% endif %}
+                        {% if seo.og_image %}
+                            <div class="mb-3">
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Open Graph Image</div>
+                                <div class="mono" style="margin-top:2px;">{{ seo.og_image }}</div>
+                            </div>
+                        {% endif %}
+                        {% if seo.json_ld %}
+                            <div class="mb-3">
+                                <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">JSON-LD Structured Data</div>
+                                <pre class="mono" style="background:var(--surface-2); padding:10px; border-radius:8px; overflow:auto; font-size:0.8rem;">{{ seo.json_ld }}</pre>
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <p class="text-muted">This app has not declared any SEO metadata in its manifest. It will use host defaults.</p>
+                    {% endif %}
                 </div>
             </div>
         </section>

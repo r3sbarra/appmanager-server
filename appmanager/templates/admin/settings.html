@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Admin{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Settings</h1>
+        <p class="page-subtitle">Host-level configuration: SEO, dashboard/login, and app visibility</p>
+    </div>
+    <a href="/admin" class="btn btn-secondary btn-sm">← Back to Admin</a>
+</div>
+
+<form method="POST" action="/admin/settings">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="admin-layout">
+        <aside class="admin-sidebar">
+            <div class="admin-nav-group-title">SETTINGS</div>
+            <nav class="admin-nav">
+                <a href="#seo" class="active" data-tab="seo"><span class="nav-icon">🔍</span> SEO</a>
+                <a href="#dashboard" data-tab="dashboard"><span class="nav-icon">🏠</span> Dashboard &amp; Login</a>
+                <a href="#visibility" data-tab="visibility"><span class="nav-icon">👁️</span> Visibility</a>
+            </nav>
+        </aside>
+
+        <div class="admin-content">
+
+            <!-- ============ SEO SECTION ============ -->
+            <section class="tab-panel active" id="panel-seo">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Search Engine Optimization</h2>
+                        <span class="badge badge-outline mono">host-level</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group mb-3">
+                            <label class="form-label">
+                                <input type="checkbox" name="seo_enabled" {% if settings.seo_enabled %}checked{% endif %}>
+                                Enable SEO rendering &amp; injection
+                            </label>
+                            <p class="text-muted" style="font-size:0.85rem;">Master toggle. When off, no SEO meta tags are rendered on portal pages or injected into sub-app pages.</p>
+                        </div>
+
+                        <div class="grid grid-2 mb-3">
+                            <div class="form-group">
+                                <label class="form-label">Portal Title</label>
+                                <input type="text" name="seo_portal_title" class="form-input" value="{{ settings.seo_portal_title }}">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Portal Robots</label>
+                                <select name="seo_portal_robots" class="form-input">
+                                    {% for r in ['index,follow','index,nofollow','noindex,follow','noindex,nofollow','none'] %}
+                                        <option value="{{ r }}" {% if settings.seo_portal_robots == r %}selected{% endif %}>{{ r }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label">Portal Description</label>
+                            <textarea name="seo_portal_description" class="form-input" rows="2">{{ settings.seo_portal_description }}</textarea>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label">Portal Keywords (comma-separated)</label>
+                            <input type="text" name="seo_portal_keywords" class="form-input" value="{{ settings.seo_portal_keywords|join(', ') }}">
+                        </div>
+
+                        <div class="grid grid-2 mb-3">
+                            <div class="form-group">
+                                <label class="form-label">Canonical Base URL</label>
+                                <input type="url" name="seo_portal_canonical_base" class="form-input" placeholder="https://example.com" value="{{ settings.seo_portal_canonical_base }}">
+                                <p class="text-muted" style="font-size:0.8rem;">Used for canonical links and sitemap URLs.</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Open Graph Image</label>
+                                <input type="url" name="seo_portal_og_image" class="form-input" placeholder="https://example.com/og.png" value="{{ settings.seo_portal_og_image }}">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-2 mb-3">
+                            <div class="form-group">
+                                <label class="form-label">
+                                    <input type="checkbox" name="seo_allow_app_override" {% if settings.seo_allow_app_override %}checked{% endif %}>
+                                    Allow per-app SEO override
+                                </label>
+                                <p class="text-muted" style="font-size:0.8rem;">When on, admins can override an app's manifest-declared SEO in the app detail page.</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">
+                                    <input type="checkbox" name="seo_auth_apps_noindex" {% if settings.seo_auth_apps_noindex %}checked{% endif %}>
+                                    Auth-required apps default to noindex
+                                </label>
+                                <p class="text-muted" style="font-size:0.8rem;">When on, apps that require login get <code>noindex,nofollow</code> injected.</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" name="seo_sitemap_enabled" {% if settings.seo_sitemap_enabled %}checked{% endif %}>
+                                Enable sitemap.xml generation
+                            </label>
+                            <p class="text-muted" style="font-size:0.8rem;">Generates <code>/sitemap.xml</code> from indexable (public) apps.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ DASHBOARD / LOGIN SECTION ============ -->
+            <section class="tab-panel" id="panel-dashboard">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Dashboard &amp; Login</h2>
+                        <span class="badge badge-outline mono">host behavior</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group mb-3">
+                            <label class="form-label">
+                                <input type="checkbox" name="dashboard_login_required" {% if settings.dashboard_login_required %}checked{% endif %}>
+                                Login required for dashboard
+                            </label>
+                            <p class="text-muted" style="font-size:0.85rem;">When on, <code>/dashboard</code> and <code>/</code> require authentication. When off, the dashboard is public.</p>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label class="form-label">
+                                <input type="checkbox" name="dashboard_enabled" {% if settings.dashboard_enabled %}checked{% endif %}>
+                                Dashboard enabled
+                            </label>
+                            <p class="text-muted" style="font-size:0.85rem;">When off, the dashboard landing page is disabled and <code>/</code> redirects to the default app below.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Default App Redirect</label>
+                            <select name="dashboard_default_app" class="form-input">
+                                <option value="">— None (use is_default flag) —</option>
+                                {% for a in apps %}
+                                    <option value="{{ a.slug }}" {% if settings.dashboard_default_app == a.slug %}selected{% endif %}>{{ a.name }} ({{ a.slug }})</option>
+                                {% endfor %}
+                            </select>
+                            <p class="text-muted" style="font-size:0.8rem;">When the dashboard is off, <code>/</code> redirects to this app.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ VISIBILITY SECTION ============ -->
+            <section class="tab-panel" id="panel-visibility">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Visibility</h2>
+                        <span class="badge badge-outline mono">dashboard listing</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group mb-3">
+                            <label class="form-label">
+                                <input type="checkbox" name="visibility_show_auth_apps" {% if settings.visibility_show_auth_apps %}checked{% endif %}>
+                                View login-required apps
+                            </label>
+                            <p class="text-muted" style="font-size:0.85rem;">When on, apps that require login are shown on the dashboard grid. When off, they are hidden entirely.</p>
+                        </div>
+
+                        <div class="card p-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                            <h4 class="mb-1" style="font-size:0.95rem;">Button labels for login-required apps</h4>
+                            <p class="text-muted mb-2" style="font-size:0.85rem;">When a login-required app is visible, the launch button adapts to the viewer's state:</p>
+                            <ul class="text-muted" style="font-size:0.85rem; line-height:1.8;">
+                                <li><strong>Not logged in</strong> → button reads <em>Login</em> (links to the login page).</li>
+                                <li><strong>Logged in, no permission</strong> → button reads <em>Permission Required</em>.</li>
+                                <li><strong>Logged in with permission</strong> → button reads <em>Launch</em>.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="action-group" style="justify-content:flex-end; margin-top:1rem;">
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </div>
+
+        </div>
+    </div>
+</form>
+
+<script>
+    (function () {
+        function activateTab(tab) {
+            document.querySelectorAll('.tab-panel').forEach(function (p) {
+                p.classList.toggle('active', p.id === 'panel-' + tab);
+            });
+            document.querySelectorAll('.admin-nav a[data-tab]').forEach(function (a) {
+                a.classList.toggle('active', a.getAttribute('data-tab') === tab);
+            });
+        }
+        document.querySelectorAll('.admin-nav a[data-tab]').forEach(function (a) {
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                activateTab(a.getAttribute('data-tab'));
+            });
+        });
+        var hash = window.location.hash.replace('#', '');
+        if (hash && document.getElementById('panel-' + hash)) activateTab(hash);
+    })();
+</script>
+{% endblock %}

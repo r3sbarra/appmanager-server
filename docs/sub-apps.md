@@ -138,6 +138,27 @@ You can also place a standard `manifest.json` at the root of your sub-app:
 | `admin_sections` | array | No | Custom admin panels mounted under `/admin/apps/<slug>/<id>`. |
 | `ui_slots` | array | No | List of UI slots this extension mounts to. |
 | `scheduled_tasks` | array | No | List of background cron routines. |
+| `seo` | object | No | Declarative SEO metadata (see below). |
+
+#### SEO metadata (`seo`)
+
+Apps can declare SEO metadata that the host renders into the served HTML `<head>`
+and uses for `robots.txt` / `sitemap.xml`. All fields are optional:
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `title` | string | Overrides `<title>`; falls back to `name`. |
+| `description` | string | Meta description. |
+| `keywords` | array | Meta keywords. |
+| `canonical_url` | string | Canonical link href. |
+| `og_title` / `og_description` / `og_image` / `og_type` | string | Open Graph tags. |
+| `twitter_card` / `twitter_image` | string | Twitter card tags. |
+| `robots` | string | `index,follow`, `noindex,nofollow`, etc. |
+| `json_ld` | object | Raw JSON-LD structured data. |
+
+Auth-required apps default to `noindex` (configurable in **Admin → Settings → SEO**).
+The host injects these tags into the sub-app's HTML only when the app declares SEO
+and the tag isn't already present.
 
 ---
 

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **SEO capabilities**: apps can declare SEO metadata in their manifest (`seo`
+  block) which the host persists to `InstalledApp` and renders into served HTML.
+  - New `InstalledApp` SEO columns (`seo_title`, `seo_description`, `seo_keywords`,
+    `seo_canonical_url`, `seo_og_image`, `seo_robots`, `seo_json_ld`) + auto-migration.
+  - `base.html` `head_meta` block renders portal SEO (title, description, keywords,
+    canonical, OG, Twitter, robots, JSON-LD).
+  - Dispatcher middleware injects app SEO into sub-app HTML `<head>` (no duplicate
+    tags; auth apps forced to `noindex` when configured).
+  - `/robots.txt` and `/sitemap.xml` routes (sitemap lists public apps).
+  - Admin app detail page shows a read-only **SEO** panel.
+- **Admin Settings page** (`/admin/settings`) with three sections:
+  - **SEO**: master toggle, portal SEO fields, per-app override, auth noindex,
+    sitemap toggle.
+  - **Dashboard & Login**: login-required toggle, dashboard on/off, default-app
+    redirect.
+  - **Visibility**: show/hide login-required apps; adaptive button labels
+    (Login / Permission Required / Launch).
+- **Host settings store**: new `HostSetting` model + `host_settings` table and
+  `appmanager.host_settings` helpers (typed get/set with canonical defaults).
+
+---
+
 ## [0.4.0] - 2026-08-28
 
 ### Added

@@ -680,6 +680,7 @@ def finalize_staged_installation(
             existing_app.description = manifest["description"]
         if manifest.get("entry_point"):
             existing_app.entry_point = manifest["entry_point"]
+        existing_app.set_seo(manifest.get("seo"))
         db.session.commit()
 
         # Clear WSGI cache and trigger reload signals.
@@ -763,6 +764,9 @@ def finalize_staged_installation(
     )
     if initial_settings:
         installed_app.set_settings(initial_settings)
+
+    # Persist declarative SEO metadata from the manifest (if any).
+    installed_app.set_seo(manifest.get("seo"))
 
     db.session.add(installed_app)
     db.session.commit()
@@ -988,6 +992,7 @@ def update_app_from_git(app_id_or_slug: Any) -> Tuple[bool, str, Dict[str, Any]]
             app_record.description = manifest["description"]
         if manifest.get("entry_point"):
             app_record.entry_point = manifest["entry_point"]
+        app_record.set_seo(manifest.get("seo"))
 
     db.session.commit()
 
@@ -1172,6 +1177,7 @@ def finalize_zip_replacement(staging_id: str) -> InstalledApp:
             app_record.description = manifest["description"]
         if manifest.get("entry_point"):
             app_record.entry_point = manifest["entry_point"]
+        app_record.set_seo(manifest.get("seo"))
 
     db.session.commit()
 

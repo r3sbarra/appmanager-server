@@ -55,6 +55,44 @@ def init_db(app):
                             text("ALTER TABLE installed_apps ADD COLUMN settings_json TEXT")
                         )
                         conn.commit()
+                    # SEO metadata columns (added 2026-08-28).
+                    if "seo_title" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_title VARCHAR(255)")
+                        )
+                        conn.commit()
+                    if "seo_description" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_description TEXT")
+                        )
+                        conn.commit()
+                    if "seo_keywords" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_keywords TEXT")
+                        )
+                        conn.commit()
+                    if "seo_canonical_url" not in columns:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE installed_apps ADD COLUMN seo_canonical_url VARCHAR(500)"
+                            )
+                        )
+                        conn.commit()
+                    if "seo_og_image" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_og_image VARCHAR(500)")
+                        )
+                        conn.commit()
+                    if "seo_robots" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_robots VARCHAR(50)")
+                        )
+                        conn.commit()
+                    if "seo_json_ld" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE installed_apps ADD COLUMN seo_json_ld TEXT")
+                        )
+                        conn.commit()
 
                 # Ensure the app_db_permissions table exists (created by db.create_all()
                 # for fresh DBs; this is a safety net for existing DBs).
@@ -93,6 +131,22 @@ def init_db(app):
                                 app_id INTEGER,
                                 action VARCHAR(64) NOT NULL,
                                 details_json TEXT
+                            )
+                            """
+                        )
+                    )
+                    conn.commit()
+
+                # Ensure the host_settings table exists (added 2026-08-28).
+                if "host_settings" not in tables:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS host_settings (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                key VARCHAR(100) NOT NULL UNIQUE,
+                                value TEXT,
+                                updated_at DATETIME
                             )
                             """
                         )

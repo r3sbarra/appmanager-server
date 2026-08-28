@@ -4,6 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}AppManager{% endblock %}</title>
+    {% block head_meta %}
+        {% if seo %}
+            {% if seo.title %}<meta name="title" content="{{ seo.title }}">{% endif %}
+            {% if seo.description %}<meta name="description" content="{{ seo.description }}">{% endif %}
+            {% if seo.keywords %}<meta name="keywords" content="{{ seo.keywords|join(', ') }}">{% endif %}
+            {% if seo.canonical_url %}<link rel="canonical" href="{{ seo.canonical_url }}">{% endif %}
+            {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
+            {% if seo.og_title %}<meta property="og:title" content="{{ seo.og_title }}">{% endif %}
+            {% if seo.og_description %}<meta property="og:description" content="{{ seo.og_description }}">{% endif %}
+            {% if seo.og_image %}<meta property="og:image" content="{{ seo.og_image }}">{% endif %}
+            {% if seo.og_type %}<meta property="og:type" content="{{ seo.og_type }}">{% endif %}
+            {% if seo.twitter_card %}<meta name="twitter:card" content="{{ seo.twitter_card }}">{% endif %}
+            {% if seo.twitter_image %}<meta name="twitter:image" content="{{ seo.twitter_image }}">{% endif %}
+            {% if seo.json_ld %}<script type="application/ld+json">{{ seo.json_ld|safe }}</script>{% endif %}
+        {% endif %}
+    {% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
     {% block extra_css %}{% endblock %}

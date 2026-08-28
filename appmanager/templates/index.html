@@ -34,7 +34,14 @@
                         {% if app.app_type == 'extension' %}Extension App{% else %}/apps/{{ app.slug }}{% endif %}
                     </span>
                     {% if app.has_web_ui %}
-                        <a href="/apps/{{ app.slug }}/" class="btn btn-primary btn-sm">Launch &rarr;</a>
+                        {% set state = app_states.get(app.slug, 'launch') if app_states else 'launch' %}
+                        {% if state == 'login' %}
+                            <a href="/auth/login?next=/apps/{{ app.slug }}" class="btn btn-secondary btn-sm">Login</a>
+                        {% elif state == 'permission' %}
+                            <a href="/auth/profile" class="btn btn-secondary btn-sm">Permission Required</a>
+                        {% else %}
+                            <a href="/apps/{{ app.slug }}/" class="btn btn-primary btn-sm">Launch &rarr;</a>
+                        {% endif %}
                     {% else %}
                         <span class="btn btn-secondary btn-sm disabled">No UI</span>
                     {% endif %}

@@ -89,3 +89,40 @@ MAIL_DEFAULT_SENDER=noreply@yourdomain.com
   ```env
   FIRST_USER_IS_ADMIN=false
   ```
+
+## Host Settings (Admin → Settings)
+
+Host-level behavior is configurable at runtime from **Admin → Settings** (stored in
+the `host_settings` table). The three sections:
+
+### SEO
+
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `seo_enabled` | `true` | Master toggle for SEO rendering + injection. |
+| `seo_portal_title` | `AppManager` | Host portal `<title>`. |
+| `seo_portal_description` | — | Host portal meta description. |
+| `seo_portal_keywords` | `[]` | Host portal meta keywords. |
+| `seo_portal_canonical_base` | — | Canonical base URL (also used for sitemap). |
+| `seo_portal_og_image` | — | Host portal Open Graph image. |
+| `seo_portal_robots` | `index,follow` | Host portal robots default. |
+| `seo_allow_app_override` | `true` | Allow per-app SEO override in the app detail page. |
+| `seo_auth_apps_noindex` | `true` | Auth-required apps default to `noindex,nofollow`. |
+| `seo_sitemap_enabled` | `true` | Generate `/sitemap.xml`. |
+
+### Dashboard & Login
+
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `dashboard_login_required` | `true` | Require login for `/dashboard` and `/`. |
+| `dashboard_enabled` | `true` | Enable the dashboard landing page. |
+| `dashboard_default_app` | — | App slug `/` redirects to when the dashboard is off. |
+
+### Visibility
+
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `visibility_show_auth_apps` | `true` | Show login-required apps on the dashboard grid. |
+
+When a login-required app is shown, the launch button adapts to the viewer:
+**Login** (not logged in), **Permission Required** (no access), or **Launch** (has access).

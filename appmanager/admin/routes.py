@@ -1195,3 +1195,65 @@ def members_bulk():
         flash("Unknown bulk action.", "warning")
 
     return redirect(url_for("admin.members_list"))
+
+
+@admin_bp.route("/settings")
+@admin_required
+def settings_page():
+    """
+    Host-level settings page: SEO, Dashboard/Login, and Visibility sections.
+    """
+    from appmanager.host_settings import get_host_settings
+    from appmanager.models import InstalledApp
+
+    user = get_current_user()
+    settings = get_host_settings()
+    apps = InstalledApp.query.filter_by(is_active=True).order_by(InstalledApp.name.asc()).all()
+    return render_template(
+        "admin/settings.html",
+        user=user,
+        settings=settings,
+        apps=apps,
+    )
+
+
+@admin_bp.route("/settings", methods=["POST"])
+@admin_required
+def settings_save():
+    """
+    Persist host-level settings from the Settings page form.
+    """
+    from appmanager.host_settings import set_host_settings
+
+    # --- SEO section ---
+    seo_updates = {
+        "seo_enabled": request.form.get("seo_enabled") == "on",
+        "seo_portal_title": request.form.get("seo_portal_title", "").strip(),
+        "seo_portal_description": request.form.get("seo_portal_description", "").strip(),
+        "seo_portal_canonical_base": request.form.get("seo_portal_canonical_base", "").strip(),
+        "seo_portal_og_image": request.form.get("seo_portal_og_image", "").strip(),
+        "seo_portal_robots": request.form.get("seo_portal_robots", "index,follow").strip(),
+        "seo_allow_app_override": request.form.get("seo_allow_app_override") == "on",
+        "seo_auth_apps_noindex": request.form.get("seo_auth_apps_noindex") == "on",
+        "seo_sitemap_enabled": request.form.get("seo_sitemap_enabled") == "on",
+    }
+    keywords_raw = request.form.get("seo_portal_keywords", "")
+    seo_updates["seo_portal_keywords"] = [
+        k.strip() for k in keywords_raw.split(",") if k.strip()
+    ]
+
+    # --- Dashboard / Login section ---
+    dashboard_updates = {
+        "dashboard_login_required": request.form.get("dashboard_login_required") == "on",
+        "dashboard_enabled": request.form.get("dashboard_enabled") == "on",
+        "dashboard_default_app": request.form.get("dashboard_default_app", "").strip(),
+    }
+
+    # --- Visibility section ---
+    visibility_updates = {
+        "visibility_show_auth_apps": request.form.get("visibility_show_auth_apps") == "on",
+    }
+
+    set_host_settings({**seo_updates, **dashboard_updates, **visibility_updates})
+    flash("Settings saved.", "success")
+    return redirect(url_for("admin.settings_page"))
