@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — AppManager{% endblock %}
+
+{% block content %}
+<div class="card mb-4 boot-item">
+    <div class="flex" style="align-items:center; gap:1.5rem;">
+        <div class="avatar" style="width:56px; height:56px; border-radius:var(--radius); background:var(--accent); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:1.5rem; font-weight:700; color:var(--accent-contrast); flex-shrink:0;">
+            {{ user.name[0].upper() if user.name else user.email[0].upper() }}
+        </div>
+        <div>
+            <h1 class="page-title" style="font-size:1.4rem;">{{ user.name or user.email }} {{ render_user_flair_badge(user.id) }}</h1>
+            <p class="text-muted mono" style="font-size:0.85rem;">{{ user.email }}</p>
+            <span class="badge badge-accent mt-1">role: {{ user.role }}</span>
+        </div>
+    </div>
+</div>
+
+<h2 class="card-title mb-3">Your Accessible Applications</h2>
+{% if apps %}
+    <div class="grid grid-apps">
+        {% for app in apps %}
+            <div class="app-card boot-item" style="animation-delay: {{ loop.index0 * 60 }}ms;">
+                <div class="app-body">
+                    <h2 class="app-title">{{ app.name }}</h2>
+                    <p class="app-meta">/apps/{{ app.slug }}</p>
+                </div>
+                <div class="app-footer">
+                    {% if app.has_web_ui %}
+                        <a href="/apps/{{ app.slug }}/" class="btn btn-secondary btn-sm">Launch &rarr;</a>
+                    {% else %}
+                        <span class="text-faint" style="font-size:0.75rem;">Extension</span>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="empty-state">
+        <h2>No Accessible Applications</h2>
+        <p>You do not currently have access to any installed apps.</p>
+    </div>
+{% endif %}
+{% endblock %}

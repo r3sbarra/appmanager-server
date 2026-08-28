@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AppManager{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    {% block extra_css %}{% endblock %}
+    {{ render_slot('head_assets') if render_slot is defined else '' }}
+</head>
+<body>
+    <header class="site-header">
+        <div class="nav-container">
+            <a href="/" class="brand">
+                <div class="brand-icon">AM</div>
+                <span>AppManager</span>
+            </a>
+            <nav>
+                <ul class="nav-links">
+                    {% if g.current_user %}
+                        <li><a href="/" class="nav-link">Applications</a></li>
+                        <li><a href="/auth/profile" class="nav-link">Profile</a></li>
+                        {% if g.current_user.is_admin() %}
+                            <li><a href="/admin" class="nav-link">Admin</a></li>
+                        {% endif %}
+                        {{ render_slot('nav_item', user=g.current_user) if render_slot is defined else '' }}
+                        <li><a href="/auth/logout" class="btn btn-secondary btn-sm">Log Out</a></li>
+                    {% else %}
+                        {{ render_slot('nav_item', user=None) if render_slot is defined else '' }}
+                        <li><a href="/auth/login" class="btn btn-primary btn-sm">Log In / Register</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+            <div class="topbar-instruments">
+                <span class="instrument" title="UTC time"><span class="blink">▮</span><span id="utc-clock">--:--:--</span></span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 AppManager &bull; Flask Sub-App Container Framework</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='vendor/htmx/htmx.min.js') }}"></script>
+    <script>
+        // Live UTC clock — the page feels "powered on"
+        (function () {
+            var el = document.getElementById('utc-clock');
+            if (!el) return;
+            function tick() {
+                var d = new Date();
+                var p = function (n) { return String(n).padStart(2, '0'); };
+                el.textContent = p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + ' UTC';
+            }
+            tick();
+            setInterval(tick, 1000);
+        })();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

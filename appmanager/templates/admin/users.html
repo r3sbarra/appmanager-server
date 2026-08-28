@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}User Management & Activity Tracking - AppManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-container { overflow-x: auto; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th, td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); }
+    th { background: rgba(15, 23, 42, 0.8); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-online { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+    .badge-offline { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+    .badge-admin { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-user { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .edit-box { background: rgba(15, 23, 42, 0.6); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color); margin-top: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+        <h1 style="font-size: 1.8rem; font-weight: 700;">User Management & Member Tracking</h1>
+        <p style="color: var(--text-muted);">Monitor real-time online status, login metrics, and manage user roles and permissions</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <a href="/admin/roles" class="btn btn-secondary">🛡️ Manage Roles</a>
+        <a href="/admin/flairs" class="btn btn-secondary">🏷️ Manage Flairs</a>
+        <a href="/admin/permissions" class="btn btn-secondary">📊 Matrix View</a>
+        <a href="/admin" class="btn btn-secondary">↩ Admin Dashboard</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem;">Registered Members</h2>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>User / Email</th>
+                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Registration Date</th>
+                    <th>Last Login</th>
+                    <th>Logins</th>
+                    <th>Last IP</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr>
+                    <td>
+                        <strong>{{ u.name or u.email }}</strong> {{ render_user_flair_badge(u.id) }}
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">{{ u.email }}</div>
+                    </td>
+                    <td>
+                        {% if u.is_online() %}
+                            <span class="status-badge badge-online">🟢 Online</span>
+                        {% else %}
+                            <span class="status-badge badge-offline">⚪ Offline</span>
+                        {% endif %}
+                        {% if not u.is_active %}
+                            <span class="status-badge" style="background: rgba(239, 68, 68, 0.2); color: #f87171;">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.role == 'admin' %}
+                            <span class="status-badge badge-admin">Admin</span>
+                        {% else %}
+                            <span class="status-badge badge-user">User</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else 'N/A' }}</td>
+                    <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never' }}</td>
+                    <td><code>{{ u.login_count }}</code></td>
+                    <td><code>{{ u.last_ip or 'N/A' }}</code></td>
+                    <td>
+                        <button onclick="document.getElementById('edit-user-{{ u.id }}').style.display = (document.getElementById('edit-user-{{ u.id }}').style.display === 'none' ? 'block' : 'none')" class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">Edit User</button>
+                    </td>
+                </tr>
+                <tr id="edit-user-{{ u.id }}" style="display: none; background: rgba(30, 41, 59, 0.4);">
+                    <td colspan="8">
+                        <div class="edit-box">
+                            <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #38bdf8;">Edit Member Details & App Access: {{ u.email }}</h4>
+                            {% set curr_flair = get_user_flair(u.id) %}
+                            <form action="/admin/users/{{ u.id }}/edit" method="POST">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Display Name</label>
+                                        <input type="text" name="name" value="{{ u.name or '' }}" class="form-input" style="width:100%; padding:0.4rem; background:#0f172a; border:1px solid #334155; color:white; border-radius:4px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Assigned Role</label>
+                                        <select name="role" style="width:100%; padding:0.4rem; background:#0f172a; border:1px solid #334155; color:white; border-radius:4px;">
+                                            {% if roles %}
+                                                {% for r in roles %}
+                                                    <option value="{{ r.slug }}" {% if u.role == r.slug %}selected{% endif %}>{{ r.name }}</option>
+                                                {% endfor %}
+                                            {% else %}
+                                                <option value="user" {% if u.role == 'user' %}selected{% endif %}>User</option>
+                                                <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+                                            {% endif %}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:0.8rem; margin-bottom:0.3rem;">Account Status</label>
+                                        <select name="is_active" style="width:100%; padding:0.4rem; background:#0f172a; border:1px solid #334155; color:white; border-radius:4px;">
+                                            <option value="1" {% if u.is_active %}selected{% endif %}>Active</option>
+                                            <option value="0" {% if not u.is_active %}selected{% endif %}>Disabled</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div style="background: rgba(15, 23, 42, 0.7); padding: 0.75rem; border-radius: 6px; border: 1px solid #334155; margin-bottom: 1rem;">
+                                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.5rem; color: #a855f7;">🏷️ User Flair Title & Badge Color:</label>
+                                    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                                        <input type="text" id="flair_title_{{ u.id }}" name="flair_title" value="{{ curr_flair.title if curr_flair else '' }}" placeholder="e.g. 🚀 Lead Developer" style="padding: 0.4rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; flex: 1; min-width: 160px;">
+                                        <input type="color" id="flair_color_{{ u.id }}" name="flair_color" value="{{ curr_flair.color if curr_flair else '#a855f7' }}" style="height: 32px; width: 40px; padding:0; border:none; background:none; cursor:pointer;" title="Pick Badge Color">
+                                        <div style="display: flex; gap: 0.3rem; align-items: center;">
+                                            {% for preset in DEFAULT_PRESET_FLAIRS %}
+                                                <button type="button" onclick="document.getElementById('flair_title_{{ u.id }}').value='{{ preset.title }}'; document.getElementById('flair_color_{{ u.id }}').value='{{ preset.color }}';" class="status-badge" style="background: {{ preset.color }}22; color: {{ preset.color }}; border: 1px solid {{ preset.color }}44; cursor: pointer; font-size: 0.7rem;">{{ preset.title }}</button>
+                                            {% endfor %}
+                                            <button type="button" onclick="document.getElementById('flair_title_{{ u.id }}').value='';" class="status-badge" style="background: rgba(148,163,184,0.2); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); cursor: pointer; font-size: 0.7rem;">Clear</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+
+                                <div style="margin-bottom: 1rem;">
+                                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.5rem; color: #94a3b8;">Accessible Sub-Applications:</label>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 1rem;">
+                                        {% for app in apps %}
+                                            {% set has_perm = perms_map.get((u.id, app.id), True) %}
+                                            <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                                                <input type="checkbox" name="perm_{{ app.id }}" value="1" {% if has_perm or u.is_admin() %}checked{% endif %} {% if u.is_admin() %}disabled{% endif %}>
+                                                <span>{{ app.name }}</span>
+                                            </label>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="submit" class="btn btn-primary" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Save User Changes</button>
+                                    <button type="button" onclick="document.getElementById('edit-user-{{ u.id }}').style.display='none'" class="btn btn-secondary" style="padding: 0.4rem 1rem; font-size: 0.85rem;">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

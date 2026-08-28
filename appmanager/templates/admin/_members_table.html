@@ -1,0 +1,108 @@
+{# Paginated member table fragment — swapped in place by htmx #}
+<div class="members-toolbar">
+    <form class="members-search" hx-get="/admin/members" hx-target="#members-table-wrap" hx-trigger="keyup changed delay:300ms, search" hx-include="[name='per_page'],[name='sort']" hx-push-url="true">
+        <span class="search-icon">⌕</span>
+        <input type="search" name="q" value="{{ q }}" placeholder="Search name or email…" class="form-input" autocomplete="off">
+    </form>
+    <div class="members-toolbar-right">
+        <select name="role" class="form-select" hx-get="/admin/members" hx-target="#members-table-wrap" hx-include="[name='q'],[name='per_page'],[name='sort']" hx-push-url="true" hx-trigger="change">
+            <option value="">All roles</option>
+            {% for r in roles %}
+                <option value="{{ r.slug }}" {% if role == r.slug %}selected{% endif %}>{{ r.name }}</option>
+            {% endfor %}
+        </select>
+        <span class="result-count mono">{{ pagination.total }} MEMBERS</span>
+    </div>
+</div>
+
+<div class="table-wrap">
+    <table class="table table-members">
+        <thead>
+            <tr>
+                <th class="col-check"><input type="checkbox" class="row-check-all" title="Select all on this page"></th>
+                <th>Member</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th class="num">Apps</th>
+                <th>Last Login</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="member-rows">
+            {% for u in users %}
+            <tr data-user-id="{{ u.id }}">
+                <td class="col-check"><input type="checkbox" class="row-check" value="{{ u.id }}"></td>
+                <td class="member-cell">
+                    <div class="member-name-row">
+                        <strong>{{ u.name or u.email }}</strong>
+                        {{ render_user_flair_badge(u.id) }}
+                    </div>
+                    <div class="member-email mono">{{ u.email }}</div>
+                </td>
+                <td>
+                    {% if u.role == 'admin' %}
+                        <span class="badge badge-accent">Admin</span>
+                    {% else %}
+                        <span class="badge badge-primary">{{ u.role }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.is_online() %}
+                        <span class="badge badge-success badge-dot">Online</span>
+                    {% else %}
+                        <span class="badge badge-muted badge-dot">Offline</span>
+                    {% endif %}
+                    {% if not u.is_active %}
+                        <span class="badge badge-danger">Disabled</span>
+                    {% endif %}
+                </td>
+                <td class="num">{{ access_counts.get(u.id, 0) }}<span class="text-faint">/{{ total_apps }}</span></td>
+                <td class="mono">{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never' }}</td>
+                <td class="actions-col">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="openMemberDrawer({{ u.id }})" title="Edit member">Edit</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="members-footer">
+    <div class="bulk-bar" id="bulk-bar">
+        <span class="bulk-count mono" id="bulk-count">0 selected</span>
+        <form class="bulk-form" action="/admin/members/bulk" method="POST" id="bulk-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div id="bulk-ids"></div>
+            <select name="action" class="form-select">
+                <option value="set_role">Set role…</option>
+                <option value="deactivate">Deactivate</option>
+                <option value="activate">Activate</option>
+                <option value="delete">Delete</option>
+            </select>
+            <select name="role" class="form-select" id="bulk-role" style="display:none;">
+                {% for r in roles %}
+                    <option value="{{ r.slug }}">{{ r.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        </form>
+    </div>
+    <div class="pagination mono">
+        {% if pagination.has_prev %}
+            <a href="#" hx-get="/admin/members?page={{ pagination.prev_num }}&q={{ q }}&role={{ role }}&sort={{ sort }}&per_page={{ per_page }}" hx-target="#members-table-wrap" hx-push-url="true">‹ prev</a>
+        {% else %}
+            <span class="text-faint">‹ prev</span>
+        {% endif %}
+        <span class="page-indicator">{{ pagination.page }} / {{ pagination.pages or 1 }}</span>
+        {% if pagination.has_next %}
+            <a href="#" hx-get="/admin/members?page={{ pagination.next_num }}&q={{ q }}&role={{ role }}&sort={{ sort }}&per_page={{ per_page }}" hx-target="#members-table-wrap" hx-push-url="true">next ›</a>
+        {% else %}
+            <span class="text-faint">next ›</span>
+        {% endif %}
+        <select name="per_page" class="form-select page-size" hx-get="/admin/members" hx-target="#members-table-wrap" hx-include="[name='q'],[name='role'],[name='sort']" hx-push-url="true" hx-trigger="change">
+            {% for n in per_page_choices %}
+                <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>

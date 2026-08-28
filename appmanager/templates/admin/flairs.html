@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Manage User Flairs - AppManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .flair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem; }
+    .table-container { overflow-x: auto; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th, td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); }
+    th { background: rgba(15, 23, 42, 0.8); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+    .flair-badge-preview { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
+    .preset-btn { cursor: pointer; border: 1px solid transparent; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; transition: transform 0.1s; }
+    .preset-btn:hover { transform: translateY(-1px); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+        <h1 style="font-size: 1.8rem; font-weight: 700;">🏷️ Manage User Flairs & Titles</h1>
+        <p style="color: var(--text-muted);">Assign custom title badges and colors to platform members</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <a href="/admin/users" class="btn btn-secondary">👥 Members List</a>
+        <a href="/admin" class="btn btn-secondary">↩ Admin Dashboard</a>
+    </div>
+</div>
+
+<div class="flair-grid">
+    <!-- Presets Card -->
+    <div class="card">
+        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: #a855f7;">Preset Flair Badges</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Click any preset flair to quickly apply it in the user assignment table on the right.</p>
+        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+            {% for preset in presets %}
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <span class="flair-badge-preview" style="background: {{ preset.color }}22; color: {{ preset.color }}; border: 1px solid {{ preset.color }}44;">{{ preset.title }}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Color: <code>{{ preset.color }}</code></span>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Assigned Flairs Card -->
+    <div class="card">
+        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">Member Flair Assignments</h3>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Member</th>
+                        <th>Current Flair</th>
+                        <th>Assign / Update</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    {% set f = user_flairs.get(u.id) %}
+                    <tr>
+                        <td>
+                            <strong>{{ u.name or u.email }}</strong>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">{{ u.email }}</div>
+                        </td>
+                        <td>
+                            {% if f and f.title %}
+                                <span class="flair-badge-preview" style="background: {{ f.color }}22; color: {{ f.color }}; border: 1px solid {{ f.color }}44;">{{ f.title }}</span>
+                            {% else %}
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">No Flair</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form action="/admin/flairs" method="POST" style="display: flex; gap: 0.4rem; align-items: center;">
+                                <input type="hidden" name="user_id" value="{{ u.id }}">
+                                <input type="text" name="flair_title" placeholder="Flair title..." value="{{ f.title if f else '' }}" class="form-input" style="width: 130px; padding: 0.3rem; font-size: 0.8rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
+                                <input type="color" name="flair_color" value="{{ f.color if f else '#a855f7' }}" style="height: 28px; width: 32px; padding: 0; border: none; background: none; cursor: pointer;">
+                                <button type="submit" name="action" value="save" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">Save</button>
+                                {% if f and f.title %}
+                                    <button type="submit" name="action" value="clear" class="btn btn-secondary" style="padding: 0.3rem 0.5rem; font-size: 0.75rem; color: #f87171;" title="Clear Flair">✕</button>
+                                {% endif %}
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

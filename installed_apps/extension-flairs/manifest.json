@@ -1,0 +1,41 @@
+{
+  "name": "User Flairs",
+  "slug": "extension-flairs",
+  "version": "2.0.0",
+  "app_type": "extension",
+  "target_app": "appmanager",
+  "has_web_ui": false,
+  "description": "Adds customizable user titles, flairs, and badges to member profiles and admin views. Reference example of the AppManager extension manifest contract.",
+  "entry_point": "extension:extension",
+  "health_check_path": "/health",
+  "ui_slots": ["user_badge"],
+  "admin_sections": [
+    {
+      "id": "assign",
+      "label": "Assign Flairs",
+      "icon": "tag",
+      "blueprint": "flairs_admin:bp",
+      "order": 10
+    }
+  ],
+  "settings_schema": [
+    {
+      "key": "default_color",
+      "type": "color",
+      "label": "Default flair color",
+      "default": "#F5A524"
+    },
+    {
+      "key": "max_flairs",
+      "type": "integer",
+      "label": "Max flairs per member",
+      "default": 3
+    },
+    {
+      "key": "allow_custom",
+      "type": "boolean",
+      "label": "Allow members to set their own flair",
+      "default": false
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Role Management - AppManager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .roles-grid {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    @media (max-width: 900px) {
+        .roles-grid { grid-template-columns: 1fr; }
+    }
+    .table-container { overflow-x: auto; margin-top: 0.5rem; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th, td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); }
+    th { background: rgba(15, 23, 42, 0.8); color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; }
+    .role-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-system { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-custom { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .form-group { margin-bottom: 1.2rem; }
+    .form-label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.4rem; color: var(--text-main); }
+    .form-input { width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background-color: rgba(15, 23, 42, 0.8); color: var(--text-main); font-size: 0.9rem; }
+    .form-input:focus { outline: none; border-color: var(--primary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+        <h1 style="font-size: 1.8rem; font-weight: 700;">Role Management</h1>
+        <p style="color: var(--text-muted);">Create custom member roles, assign permissions, and organize portal access levels</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+        <a href="/admin/users" class="btn btn-secondary">👥 Member List</a>
+        <a href="/admin/permissions" class="btn btn-secondary">📊 Permissions Matrix</a>
+        <a href="/admin" class="btn btn-secondary">↩ Admin Dashboard</a>
+    </div>
+</div>
+
+<div class="roles-grid">
+    <!-- Create Role Card -->
+    <div class="card">
+        <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem;">➕ Create New Role</h2>
+        <form action="/admin/roles/create" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">Role Display Name</label>
+                <input type="text" name="name" class="form-input" placeholder="e.g. Content Editor" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Role Slug (identifier)</label>
+                <input type="text" name="slug" class="form-input" placeholder="e.g. content-editor (optional)">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea name="description" class="form-input" style="height: 80px; resize: vertical;" placeholder="Describe what responsibilities or access this role grants..."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Custom Role</button>
+        </form>
+    </div>
+
+    <!-- Defined Roles Table -->
+    <div class="card">
+        <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem;">🛡️ Configured Roles ({{ roles|length }})</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Role Name</th>
+                        <th>Slug</th>
+                        <th>Type</th>
+                        <th>Members</th>
+                        <th>Description</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in roles %}
+                    <tr>
+                        <td>
+                            <strong>{{ r.name }}</strong>
+                        </td>
+                        <td><code>{{ r.slug }}</code></td>
+                        <td>
+                            {% if r.is_system %}
+                                <span class="role-badge badge-system">System Core</span>
+                            {% else %}
+                                <span class="role-badge badge-custom">Custom</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span style="font-weight: 600; color: #38bdf8;">{{ role_counts.get(r.slug, 0) }}</span> user(s)
+                        </td>
+                        <td style="color: var(--text-muted); font-size: 0.85rem; max-width: 200px;">
+                            {{ r.description or 'No description provided.' }}
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.4rem; align-items: center;">
+                                {% if not r.is_system %}
+                                    <form action="/admin/roles/{{ r.id }}/delete" method="POST" onsubmit="return confirm('Delete custom role {{ r.name }}? Members assigned this role will be reassigned to standard user.');" style="margin:0;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Delete</button>
+                                    </form>
+                                {% else %}
+                                    <span style="font-size: 0.75rem; color: var(--text-muted); opacity: 0.6;">Protected</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

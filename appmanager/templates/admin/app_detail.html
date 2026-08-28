@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ app.name }} — Admin{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div class="breadcrumb mono">admin / apps / {{ app.slug }}</div>
+    <h1 class="page-title">{{ app.name }}</h1>
+    <div class="page-subtitle mono">
+        {{ app.app_type|upper }} · {{ app.slug }} · v{{ manifest.get('version', '—') }}
+        {% if app.is_active %}<span class="badge badge-success badge-dot">active</span>{% else %}<span class="badge badge-danger">inactive</span>{% endif %}
+    </div>
+</div>
+
+<div class="admin-layout">
+    <aside class="admin-sidebar">
+        <div class="admin-nav">
+            <a href="/admin" class="admin-nav-link" data-tab="apps">← Back to Admin</a>
+        </div>
+        <div class="admin-nav-group">
+            <div class="admin-nav-group-title">APP PANELS</div>
+            {% for p in panels %}
+                <a href="#panel-{{ p.panel_id }}" class="admin-nav-link" data-panel="{{ p.panel_id }}">{{ p.label }}</a>
+            {% else %}
+                <div class="text-faint" style="font-size:0.8rem; padding:0.5rem 0.75rem;">No panels declared</div>
+            {% endfor %}
+        </div>
+    </aside>
+
+    <div class="admin-content">
+        {% if not panels and not schema %}
+            <div class="card">
+                <div class="empty-state">
+                    <h2>No admin panels declared</h2>
+                    <p>This app's manifest does not declare any <code>admin_sections</code> or <code>settings_schema</code>.</p>
+                    <p class="text-faint mono" style="font-size:0.75rem;">Add them to <code>manifest.json</code> and reinstall to enable per-app admin settings.</p>
+                </div>
+            </div>
+        {% endif %}
+
+        {% for item in rendered %}
+            <section class="tab-panel app-panel" id="panel-{{ item.panel.panel_id }}">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">{{ item.panel.label }}</h2>
+                        {% if item.panel.endpoint %}
+                            <span class="badge badge-accent">custom panel</span>
+                        {% else %}
+                            <span class="badge badge-primary">generated form</span>
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        {{ item.html|safe }}
+                    </div>
+                </div>
+            </section>
+        {% endfor %}
+
+        {% if schema %}
+            <section class="tab-panel app-panel" id="panel-settings">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Settings</h2>
+                        <span class="badge badge-primary">generated form</span>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="/admin/apps/{{ app.slug }}/settings" class="schema-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            {% for desc in schema %}
+                                {% set key = desc.key %}
+                                {% set label = desc.label or key %}
+                                {% set vtype = desc.type or 'json' %}
+                                {% set value = configs.get(key, desc.default) %}
+                                <div class="form-group">
+                                    <label class="form-label">{{ label }}</label>
+                                    {% if vtype == 'boolean' %}
+                                        <label class="flex-center" style="gap:0.5rem;cursor:pointer;">
+                                            <input type="checkbox" name="cfg_{{ key }}" value="1" {% if value %}checked{% endif %} class="perm-toggle">
+                                            <span class="text-muted" style="font-size:0.8rem;">enabled</span>
+                                        </label>
+                                    {% elif vtype == 'color' %}
+                                        <input type="color" name="cfg_{{ key }}" value="{{ value or '#F5A524' }}" style="height:36px;width:60px;padding:0;border:none;background:none;cursor:pointer;">
+                                    {% elif vtype == 'integer' %}
+                                        <input type="number" name="cfg_{{ key }}" value="{{ value if value is not none else '' }}" class="form-input">
+                                    {% elif vtype == 'textarea' %}
+                                        <textarea name="cfg_{{ key }}" class="form-textarea" rows="3">{{ value if value is not none else '' }}</textarea>
+                                    {% else %}
+                                        <input type="text" name="cfg_{{ key }}" value="{{ value if value is not none else '' }}" class="form-input">
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                            <div class="action-group mt-2">
+                                <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Panel sub-nav switching
+    document.querySelectorAll('.admin-nav-link[data-panel]').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            var pid = link.getAttribute('data-panel');
+            document.querySelectorAll('.admin-nav-link[data-panel]').forEach(function (a) {
+                a.classList.toggle('active', a.getAttribute('data-panel') === pid);
+            });
+            document.querySelectorAll('.app-panel').forEach(function (p) {
+                p.classList.toggle('active', p.id === 'panel-' + pid);
+            });
+            history.replaceState(null, '', '#' + pid);
+        });
+    });
+    (function () {
+        var hash = window.location.hash.replace('#', '');
+        if (hash && document.getElementById('panel-' + hash)) {
+            document.querySelectorAll('.admin-nav-link[data-panel]').forEach(function (a) {
+                a.classList.toggle('active', a.getAttribute('data-panel') === hash);
+            });
+            document.querySelectorAll('.app-panel').forEach(function (p) {
+                p.classList.toggle('active', p.id === 'panel-' + hash);
+            });
+        } else {
+            var first = document.querySelector('.app-panel');
+            if (first) first.classList.add('active');
+            var firstLink = document.querySelector('.admin-nav-link[data-panel]');
+            if (firstLink) firstLink.classList.add('active');
+        }
+    })();
+</script>
+{% endblock %}

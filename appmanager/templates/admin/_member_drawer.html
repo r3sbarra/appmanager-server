@@ -1,0 +1,98 @@
+{# Member edit drawer content — loaded via htmx into the slide-over #}
+<div class="drawer-header">
+    <div class="drawer-title">
+        <h3>{{ u.name or u.email }}</h3>
+        <div class="drawer-sub mono">{{ u.email }}</div>
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="closeMemberDrawer()" title="Close">✕</button>
+</div>
+
+<form action="/admin/members/{{ u.id }}/edit" method="POST" class="drawer-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="drawer-section">
+        <h4 class="drawer-section-title">IDENTITY</h4>
+        <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input type="text" name="name" value="{{ u.name or '' }}" class="form-input">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="text" value="{{ u.email }}" class="form-input" disabled>
+        </div>
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label class="form-label">Role</label>
+                <select name="role" class="form-select">
+                    {% for r in roles %}
+                        <option value="{{ r.slug }}" {% if u.role == r.slug %}selected{% endif %}>{{ r.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select name="is_active" class="form-select">
+                    <option value="1" {% if u.is_active %}selected{% endif %}>Active</option>
+                    <option value="0" {% if not u.is_active %}selected{% endif %}>Disabled</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="drawer-section">
+        <h4 class="drawer-section-title">FLAIR</h4>
+        <div class="flex wrap gap-1">
+            <input type="text" name="flair_title" value="{{ flair.title if flair else '' }}" placeholder="e.g. 🚀 Lead Developer" class="form-input" style="flex:1; min-width:140px;">
+            <input type="color" name="flair_color" value="{{ flair.color if flair else '#F5A524' }}" style="height:36px; width:44px; padding:0; border:none; background:none; cursor:pointer;" title="Pick Badge Color">
+        </div>
+        <div class="flex wrap gap-1 mt-1">
+            {% for preset in presets %}
+                <button type="button" onclick="this.closest('form').querySelector('[name=flair_title]').value='{{ preset.title }}'; this.closest('form').querySelector('[name=flair_color]').value='{{ preset.color }}';" class="badge" style="color: {{ preset.color }}; border-color: {{ preset.color }}66; cursor:pointer;">{{ preset.title }}</button>
+            {% endfor %}
+            <button type="button" onclick="this.closest('form').querySelector('[name=flair_title]').value='';" class="badge badge-muted" style="cursor:pointer;">Clear</button>
+        </div>
+    </section>
+
+    <section class="drawer-section">
+        <div class="drawer-section-head">
+            <h4 class="drawer-section-title">ACCESS</h4>
+            {% if u.is_admin() %}
+                <span class="badge badge-accent">Inherited from Admin</span>
+            {% else %}
+                <div class="flex gap-1">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setAllPerms(this, true)">grant all</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setAllPerms(this, false)">revoke all</button>
+                </div>
+            {% endif %}
+        </div>
+        <div class="perm-list">
+            {% for p in perms %}
+                <label class="perm-row">
+                    <span class="perm-name">
+                        <span class="perm-dot" style="background: {{ 'var(--success)' if p.can_access or p.inherited else 'var(--text-faint)' }}"></span>
+                        {{ p.name }}
+                    </span>
+                    {% if p.inherited %}
+                        <input type="checkbox" checked disabled title="Inherited from Admin role">
+                    {% else %}
+                        <input type="checkbox" name="perm_{{ p.app_id }}" value="1" {% if p.can_access %}checked{% endif %} class="perm-toggle">
+                    {% endif %}
+                </label>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="drawer-section">
+        <h4 class="drawer-section-title">SESSION</h4>
+        <div class="session-stats">
+            <div class="session-stat"><span class="mono">{{ u.login_count }}</span><span class="text-faint">logins</span></div>
+            <div class="session-stat"><span class="mono">{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</span><span class="text-faint">last login</span></div>
+            <div class="session-stat"><span class="mono">{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</span><span class="text-faint">registered</span></div>
+        </div>
+    </section>
+
+    <div class="drawer-footer">
+        <button type="submit" class="btn btn-primary">Save Member</button>
+        <button type="button" class="btn btn-secondary" onclick="closeMemberDrawer()">Cancel</button>
+    </div>
+</form>

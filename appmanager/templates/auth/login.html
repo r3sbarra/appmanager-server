@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Log In — AppManager{% endblock %}
+
+{% block content %}
+<div style="max-width:440px; margin:3rem auto;">
+    <div class="card boot-item" style="padding:2.5rem; border-radius:var(--radius-lg);">
+        <h1 class="page-title" style="text-align:center; font-size:1.5rem;">Welcome to AppManager</h1>
+        <p class="text-muted" style="text-align:center; font-size:0.9rem; margin-bottom:2rem;">Sign in or register with Email Magic Link or Google</p>
+
+        {% if magic_sent %}
+            <div class="alert alert-success">
+                <strong>Magic Link Sent!</strong> Check <code>{{ email }}</code> for your one-time login link.
+            </div>
+
+            {% if dev_magic_url %}
+                <div class="alert alert-warning" style="margin-top:1rem;">
+                    <div>
+                        <strong>Developer Mode Preview:</strong><br>
+                        <span style="font-size:0.85rem;">SMTP is not configured. Use this magic link directly to log in:</span>
+                    </div>
+                    <a href="{{ dev_magic_url }}" class="btn btn-primary btn-block" style="margin-top:0.5rem;">Click to Log In Instantly &rarr;</a>
+                </div>
+            {% endif %}
+
+            <p style="text-align:center; margin-top:1.5rem;">
+                <a href="/auth/login" style="color: var(--accent); text-decoration:none;">&larr; Back to sign in</a>
+            </p>
+        {% else %}
+            {% if google_configured %}
+                <a href="/auth/google" class="btn btn-block" style="background:#fff; color:#1f2937; font-weight:600; margin-bottom:1rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" style="margin-right:8px;">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.28v3.15C3.31 21.39 7.37 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.28C.46 8.21 0 10.05 0 12s.46 3.79 1.28 5.42l4-3.15z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.37 0 3.31 2.61 1.28 6.58l4 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                    Continue with Google
+                </a>
+                <div class="divider" style="margin:1.5rem 0;">
+                    <span style="flex:1; border-bottom:1px solid var(--border);"></span>
+                    <span style="padding:0 0.75rem;">OR EMAIL MAGIC LINK</span>
+                    <span style="flex:1; border-bottom:1px solid var(--border);"></span>
+                </div>
+            {% endif %}
+
+            <form action="/auth/magic-link" method="POST">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="form-group">
+                    <label class="form-label" for="email">Email Address</label>
+                    <input type="email" id="email" name="email" class="form-input" placeholder="you@example.com" required autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-lg">Send Magic Login Link &rarr;</button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

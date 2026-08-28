@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Applications — AppManager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Installed Applications</h1>
+        <p class="page-subtitle">Select an application below to launch it inside your session.</p>
+    </div>
+    {% if apps %}
+        <span class="badge badge-primary">{{ apps|length }} available</span>
+    {% endif %}
+</div>
+
+{{ render_slot('dashboard_widget', user=user) if render_slot is defined else '' }}
+
+{% if apps %}
+    <div class="grid grid-apps">
+        {% for app in apps %}
+            <div class="app-card boot-item" style="animation-delay: {{ loop.index0 * 60 }}ms;">
+                <div class="app-body">
+                    <div class="flex-between mb-1">
+                        <span class="badge badge-primary">{{ app.source_type }}</span>
+                        {% if app.app_type == 'extension' %}
+                            <span class="badge badge-accent">Extension</span>
+                        {% endif %}
+                    </div>
+                    <h2 class="app-title">{{ app.name }}</h2>
+                    <p class="app-desc">{{ app.description or "Flask application hosted under AppManager wrapper." }}</p>
+                </div>
+                <div class="app-footer">
+                    <span class="app-meta">
+                        {% if app.app_type == 'extension' %}Extension App{% else %}/apps/{{ app.slug }}{% endif %}
+                    </span>
+                    {% if app.has_web_ui %}
+                        <a href="/apps/{{ app.slug }}/" class="btn btn-primary btn-sm">Launch &rarr;</a>
+                    {% else %}
+                        <span class="btn btn-secondary btn-sm disabled">No UI</span>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="empty-state">
+        <h2>No Applications Available</h2>
+        <p>There are currently no sub-apps installed or you do not have permission to access any installed applications.</p>
+        {% if user and user.is_admin() %}
+            <a href="/admin" class="btn btn-primary">Go to Admin Dashboard to Install Apps</a>
+        {% endif %}
+    </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{
+  "name": "Template Reference App",
+  "slug": "template-app",
+  "version": "1.0.0",
+  "description": "Standardized Flask sub-app template demonstrating manifest spec, /health contract, in-process telemetry, and cron task execution.",
+  "entry_point": "app:app",
+  "health_check_path": "/health",
+  "scheduled_tasks": [
+    {
+      "name": "hourly_template_task",
+      "entry_point": "tasks:run_maintenance",
+      "frequency": "hourly"
+    }
+  ]
+}

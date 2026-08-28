@@ -1,0 +1,902 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — AppManager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">Admin</h1>
+        <p class="page-subtitle">Manage sub-apps, members, roles, flairs &amp; access</p>
+    </div>
+    <div class="action-group">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('run-health-form').submit();">↻ Run Health Checks</button>
+    </div>
+    <form id="run-health-form" action="/admin/health/check-all" method="POST" style="display:none;"></form>
+</div>
+
+<!-- Stat readouts (label-over-number, no boxes) -->
+<div class="stat-grid">
+    <div class="stat-readout">
+        <div class="stat-label">Applications</div>
+        <div class="stat-value">{{ apps|length }}</div>
+        <div class="stat-sub">{{ apps|selectattr('is_active')|list|length }} active</div>
+    </div>
+    <div class="stat-readout">
+        <div class="stat-label">Members</div>
+        <div class="stat-value">{{ users|length }}</div>
+        <div class="stat-sub">{{ users|selectattr('is_online')|list|length }} online</div>
+    </div>
+    <div class="stat-readout">
+        <div class="stat-label">Roles</div>
+        <div class="stat-value">{{ roles|length }}</div>
+        <div class="stat-sub">{{ roles|selectattr('is_system')|list|length }} system</div>
+    </div>
+    <div class="stat-readout">
+        <div class="stat-label">Extensions</div>
+        <div class="stat-value">{{ apps|selectattr('app_type', 'equalto', 'extension')|list|length }}</div>
+        <div class="stat-sub">UI slot plugins</div>
+    </div>
+</div>
+
+<div class="admin-layout">
+    <!-- Sidebar nav -->
+    <aside class="admin-sidebar">
+        <nav class="admin-nav">
+            <a href="#apps" class="active" data-tab="apps"><span class="nav-icon">▸</span> Applications</a>
+            <a href="#users" data-tab="users"><span class="nav-icon">▸</span> Members</a>
+            <a href="#access" data-tab="access"><span class="nav-icon">▸</span> Access Management</a>
+        </nav>
+    </aside>
+
+    <!-- Content -->
+    <div class="admin-content">
+
+        <!-- ============ APPS TAB ============ -->
+        <section class="tab-panel active" id="panel-apps">
+            <div class="grid grid-2 mb-4">
+                <!-- Git Install -->
+                <div class="card">
+                    <h2 class="card-title mb-3">Pull &amp; Install from GitHub</h2>
+                    <form id="form-install-git" action="/admin/apps/install-git" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group">
+                            <label class="form-label">Repository URL</label>
+                            <input type="url" name="repo_url" class="form-input" placeholder="https://github.com/user/flask-app.git" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">App Display Name</label>
+                            <input type="text" name="name" class="form-input" placeholder="e.g. My Dashboard" required>
+                        </div>
+                        <div class="grid grid-2">
+                            <div class="form-group">
+                                <label class="form-label">URL Slug</label>
+                                <input type="text" name="slug" class="form-input" placeholder="my-dashboard">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Entrypoint</label>
+                                <input type="text" name="entry_point" class="form-input" placeholder="app:app">
+                            </div>
+                        </div>
+                        <button type="submit" id="btn-install-git" class="btn btn-primary btn-block">Pull Git Repository &amp; Pre-Check</button>
+                    </form>
+                </div>
+
+                <!-- ZIP Install -->
+                <div class="card">
+                    <h2 class="card-title mb-3">Upload &amp; Install ZIP</h2>
+                    <form id="form-install-zip" action="/admin/apps/install-zip" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group">
+                            <label class="form-label">Select ZIP File</label>
+                            <input type="file" id="zip_file_input" name="zip_file" class="form-input" accept=".zip" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">App Display Name</label>
+                            <input type="text" id="zip_app_name" name="name" class="form-input" placeholder="e.g. Analytics Tool" required>
+                        </div>
+                        <div class="grid grid-2">
+                            <div class="form-group">
+                                <label class="form-label">URL Slug</label>
+                                <input type="text" id="zip_app_slug" name="slug" class="form-input" placeholder="analytics">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Entrypoint</label>
+                                <input type="text" name="entry_point" class="form-input" placeholder="app:app">
+                            </div>
+                        </div>
+                        <button type="submit" id="btn-install-zip" class="btn btn-primary btn-block">Upload &amp; Pre-Check ZIP</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Installed apps table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Installed Sub-Applications</h2>
+                    <span class="badge badge-primary">{{ apps|length }} total</span>
+                </div>
+                {% if apps %}
+                    <div class="table-wrap">
+                        <table class="table table-apps">
+                            <thead>
+                                <tr>
+                                    <th>Application</th>
+                                    <th>State</th>
+                                    <th>Health</th>
+                                    <th class="actions-col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for app in apps %}
+                                    {% set hlog = health_map.get(app.id) %}
+                                    {% set hhist = health_history.get(app.id, []) %}
+                                    <tr>
+                                        <td class="app-name-cell">
+                                            <div class="app-name-row">
+                                                <strong>{{ app.name }}</strong>
+                                                {% if app.is_default %}<span class="badge badge-warning">Default</span>{% endif %}
+                                                {% if app.app_type == 'extension' %}<span class="badge badge-accent">Ext</span>{% endif %}
+                                            </div>
+                                            <div class="app-path mono">/apps/{{ app.slug }}</div>
+                                        </td>
+                                        <td>
+                                            <div class="state-cell">
+                                                <form class="inline-form" action="/admin/apps/{{ app.id }}/toggle-active" method="POST">
+                                                    {% if app.is_active %}
+                                                        <button type="submit" class="state-toggle state-on" title="Click to disable/hide app"><span class="badge-dot"></span> Active</button>
+                                                    {% else %}
+                                                        <button type="submit" class="state-toggle state-off" title="Click to activate/enable app">Disabled</button>
+                                                    {% endif %}
+                                                </form>
+                                                <form class="inline-form" action="/admin/apps/{{ app.id }}/toggle-auth" method="POST">
+                                                    {% if app.requires_auth %}
+                                                        <button type="submit" class="state-toggle state-lock" title="Click to make public">🔒 Protected</button>
+                                                    {% else %}
+                                                        <button type="submit" class="state-toggle state-open" title="Click to require login">🌐 Public</button>
+                                                    {% endif %}
+                                                </form>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="health-cell">
+                                                {% if hlog %}
+                                                    {% if hlog.status == 'healthy' %}
+                                                        <span class="badge badge-success badge-dot">Healthy</span>
+                                                    {% elif hlog.status == 'degraded' %}
+                                                        <span class="badge badge-warning badge-dot">Degraded</span>
+                                                    {% else %}
+                                                        <span class="badge badge-danger badge-dot">Down</span>
+                                                    {% endif %}
+                                                {% else %}
+                                                    <span class="badge badge-muted">—</span>
+                                                {% endif %}
+                                                {% if hhist %}
+                                                    <span class="sparkline" title="Health history (oldest → newest)">{{ render_sparkline(hhist) }}</span>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                        <td class="actions-col">
+                                            <div class="row-actions">
+                                                <a href="/admin/apps/{{ app.slug }}" class="btn btn-ghost btn-sm icon-btn" title="Configure App Settings">⚙</a>
+                                                {% if app.has_web_ui %}
+                                                    <a href="/apps/{{ app.slug }}/" class="btn btn-secondary btn-sm">Launch</a>
+                                                {% endif %}
+                                                <form class="inline-form" action="/admin/apps/{{ app.id }}/set-default" method="POST">
+                                                    {% if app.is_default %}
+                                                        <button type="submit" class="btn btn-warning btn-sm icon-btn" title="Unset default landing app">★</button>
+                                                    {% else %}
+                                                        <button type="submit" class="btn btn-ghost btn-sm" title="Set as default landing app">Default</button>
+                                                    {% endif %}
+                                                </form>
+                                                <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('uninstall-{{ app.id }}', 'Uninstall {{ app.name }}?', 'Type <code>{{ app.slug }}</code> to confirm')">Uninstall</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <h2>No sub-applications installed</h2>
+                        <p>Use the forms above to install your first sub-app.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- ============ MEMBERS TAB ============ -->
+        <section class="tab-panel" id="panel-users">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Registered Members</h2>
+                    <span class="badge badge-primary">{{ members_pagination.total if members_pagination else users|length }} total</span>
+                </div>
+                <div id="members-table-wrap">
+                    {% if members_pagination %}
+                        {% include 'admin/_members_table.html' %}
+                    {% elif users %}
+                        {# Legacy fallback: render the full list inline (no pagination context) #}
+                        <div class="table-wrap">
+                            <table class="table table-members">
+                                <thead>
+                                    <tr>
+                                        <th>Member</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Last Login</th>
+                                        <th class="actions-col">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for u in users %}
+                                    <tr>
+                                        <td class="member-cell">
+                                            <div class="member-name-row"><strong>{{ u.name or u.email }}</strong> {{ render_user_flair_badge(u.id) }}</div>
+                                            <div class="member-email mono">{{ u.email }}</div>
+                                        </td>
+                                        <td>
+                                            {% if u.role == 'admin' %}<span class="badge badge-accent">Admin</span>{% else %}<span class="badge badge-primary">{{ u.role }}</span>{% endif %}
+                                        </td>
+                                        <td>
+                                            {% if u.is_online() %}<span class="badge badge-success badge-dot">Online</span>{% else %}<span class="badge badge-muted badge-dot">Offline</span>{% endif %}
+                                            {% if not u.is_active %}<span class="badge badge-danger">Disabled</span>{% endif %}
+                                        </td>
+                                        <td class="mono">{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never' }}</td>
+                                        <td class="actions-col"><button type="button" class="btn btn-ghost btn-sm" onclick="openMemberDrawer({{ u.id }})">Edit</button></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="empty-state">
+                            <h2>No registered members</h2>
+                            <p>Members appear here once they register or log in.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ ACCESS MANAGEMENT TAB ============ -->
+        <section class="tab-panel" id="panel-access">
+            <!-- Roles -->
+            <div class="grid grid-2 mb-4">
+                <div class="card">
+                    <h2 class="card-title mb-3">Create New Role</h2>
+                    <form action="/admin/roles/create" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group">
+                            <label class="form-label">Role Display Name</label>
+                            <input type="text" name="name" class="form-input" placeholder="e.g. Content Editor" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Role Slug (identifier)</label>
+                            <input type="text" name="slug" class="form-input" placeholder="e.g. content-editor">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea name="description" class="form-textarea" style="height:80px;" placeholder="Describe what responsibilities or access this role grants..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Create Custom Role</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Configured Roles</h2>
+                        <span class="badge badge-primary">{{ roles|length }}</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Role</th>
+                                    <th>Slug</th>
+                                    <th>Type</th>
+                                    <th class="num">Members</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in roles %}
+                                <tr>
+                                    <td><strong>{{ r.name }}</strong></td>
+                                    <td><code>{{ r.slug }}</code></td>
+                                    <td>
+                                        {% if r.is_system %}
+                                            <span class="badge badge-accent">System</span>
+                                        {% else %}
+                                            <span class="badge badge-primary">Custom</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="num">{{ role_counts.get(r.slug, 0) }}</td>
+                                    <td>
+                                        {% if not r.is_system %}
+                                            <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('role-{{ r.id }}', 'Delete role {{ r.name }}?', 'Type <code>{{ r.slug }}</code> to confirm')">Delete</button>
+                                        {% else %}
+                                            <span class="text-faint" style="font-size:0.75rem;">Protected</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flairs -->
+            <div class="grid grid-2 mb-4">
+                <div class="card">
+                    <h2 class="card-title mb-2" style="color: var(--accent);">Preset Flair Badges</h2>
+                    <p class="text-muted mb-2" style="font-size:0.85rem;">Click any preset flair to quickly apply it in the member assignment table.</p>
+                    <div class="flex" style="flex-direction:column; gap:0.6rem;">
+                        {% for preset in presets %}
+                            <div class="flex-between" style="background: var(--bg-elevated); padding:0.6rem 0.8rem; border-radius:var(--radius); border:1px solid var(--border);">
+                                <span class="badge" style="color: {{ preset.color }}; border-color: {{ preset.color }}66;">{{ preset.title }}</span>
+                                <span class="text-muted mono" style="font-size:0.72rem;">{{ preset.color }}</span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title mb-0">Member Flair Assignments</h2>
+                        <span class="badge badge-primary">{{ users|length }}</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Current Flair</th>
+                                    <th>Assign / Update</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for u in users %}
+                                {% set f = user_flairs.get(u.id) %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ u.name or u.email }}</strong>
+                                        <div class="text-muted" style="font-size:0.75rem;">{{ u.email }}</div>
+                                    </td>
+                                    <td>
+                                        {% if f and f.title %}
+                                            <span class="badge" style="color: {{ f.color }}; border-color: {{ f.color }}66;">{{ f.title }}</span>
+                                        {% else %}
+                                            <span class="text-faint" style="font-size:0.75rem;">No Flair</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form action="/admin/flairs" method="POST" class="flex gap-1" style="align-items:center;">
+                                            <input type="hidden" name="user_id" value="{{ u.id }}">
+                                            <input type="text" name="flair_title" placeholder="Flair title..." value="{{ f.title if f else '' }}" class="form-input" style="width:130px; padding:0.3rem; font-size:0.8rem;">
+                                            <input type="color" name="flair_color" value="{{ f.color if f else '#F5A524' }}" style="height:28px; width:32px; padding:0; border:none; background:none; cursor:pointer;">
+                                            <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
+                                            {% if f and f.title %}
+                                                <button type="submit" name="action" value="clear" class="btn btn-secondary btn-sm" title="Clear Flair">✕</button>
+                                            {% endif %}
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Permissions matrix -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">App Access Permissions Matrix</h2>
+                    <span class="badge badge-primary">{{ users|length }} × {{ apps|length }}</span>
+                </div>
+                {% if users and apps %}
+                    <form action="/admin/permissions" method="POST">
+                        <div class="table-wrap mb-3">
+                            <table class="table" style="text-align:center;">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align:left;">User / Email</th>
+                                        <th style="text-align:left;">Role</th>
+                                        {% for app in apps %}
+                                            <th>
+                                                <div>{{ app.name }}</div>
+                                                <div class="text-muted" style="font-size:0.7rem; font-weight:normal;">/apps/{{ app.slug }}</div>
+                                            </th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for u in users %}
+                                        <tr>
+                                            <td style="text-align:left;">
+                                                <strong>{{ u.name or u.email }}</strong><br>
+                                                <span class="text-muted" style="font-size:0.78rem;">{{ u.email }}</span>
+                                            </td>
+                                            <td style="text-align:left;">
+                                                <span class="badge badge-primary">{{ u.role }}</span>
+                                            </td>
+                                            {% for app in apps %}
+                                                {% set is_checked = perms_map.get((u.id, app.id), True) %}
+                                                <td>
+                                                    {% if u.is_admin() %}
+                                                        <span class="text-success" style="font-size:0.8rem;">Full</span>
+                                                    {% else %}
+                                                        <input type="checkbox" name="perm_{{ u.id }}_{{ app.id }}" value="1" class="checkbox-cell" {% if is_checked %}checked{% endif %} style="transform:scale(1.2); cursor:pointer;">
+                                                    {% endif %}
+                                                </td>
+                                            {% endfor %}
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Permission Changes</button>
+                    </form>
+                {% else %}
+                    <div class="empty-state">
+                        <h2>Nothing to manage yet</h2>
+                        <p>You need both registered users and installed sub-apps to manage permissions.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+    </div>
+</div>
+
+<!-- Type-to-confirm modal -->
+<div id="confirm-modal" class="modal-overlay" style="display:none;">
+    <div class="modal">
+        <h3 id="confirm-title" class="mb-2" style="font-size:1.05rem;"></h3>
+        <p id="confirm-desc" class="text-muted mb-3" style="font-size:0.9rem;"></p>
+        <form id="confirm-form" method="POST" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-label">Type the slug to confirm</label>
+                <input type="text" id="confirm-input" class="form-input" autocomplete="off" placeholder="type to confirm...">
+            </div>
+            <div class="action-group">
+                <button type="submit" id="confirm-submit" class="btn btn-danger" disabled>Confirm Delete</button>
+                <button type="button" class="btn btn-secondary" onclick="closeConfirm()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Security Pre-Check Loading Modal -->
+<div id="security-loading-modal" class="modal-overlay" style="display:none;">
+    <div class="modal scanner-loader">
+        <div class="scanner-spinner"></div>
+        <h3 id="security-loading-title" class="mb-1" style="font-size:1.05rem;">Security Pre-Check in Progress</h3>
+        <p id="security-loading-msg" class="text-muted mono" style="font-size:0.85rem;">Staging package &amp; running static AST security audit...</p>
+    </div>
+</div>
+
+<!-- Security Pre-Check Results & Confirmation Modal -->
+<div id="security-modal" class="modal-overlay" style="display:none;">
+    <div class="modal modal-lg">
+        <div class="security-header">
+            <div>
+                <h3 class="mb-0" style="font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+                    <span>🛡️ Security Pre-Check Audit</span>
+                </h3>
+                <div id="sec-app-info" class="text-muted mono" style="font-size:0.8rem; margin-top:2px;"></div>
+            </div>
+            <span id="sec-risk-badge" class="badge">CLEAN</span>
+        </div>
+
+        <div class="modal-scroll-body">
+            <!-- Stats -->
+            <div class="security-stats">
+                <div class="security-stat-box">
+                    <div id="sec-stat-files" class="security-stat-val">0</div>
+                    <div class="security-stat-lbl">Files Scanned</div>
+                </div>
+                <div class="security-stat-box">
+                    <div id="sec-stat-py" class="security-stat-val">0</div>
+                    <div class="security-stat-lbl">Python Modules</div>
+                </div>
+                <div class="security-stat-box">
+                    <div id="sec-stat-findings" class="security-stat-val">0</div>
+                    <div class="security-stat-lbl">Security Findings</div>
+                </div>
+            </div>
+
+            <!-- Summary Alert -->
+            <div id="sec-summary-banner" class="alert mb-3"></div>
+
+            <!-- Findings List -->
+            <div class="mb-2">
+                <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">Detailed Analysis Findings</h4>
+                <div id="sec-findings-container"></div>
+            </div>
+
+            <!-- Confirmation Prompt -->
+            <div class="card p-3 mb-0" style="background:var(--surface-2); border:1px solid var(--border);">
+                <p id="sec-confirm-prompt" class="mb-0" style="font-size:0.9rem; font-weight:600;">
+                    Pre-installation checks are complete. Would you like to proceed with installing this application into AppManager?
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="action-group" style="justify-content: flex-end; border-top: 1px solid var(--border); padding-top: var(--sp-3);">
+            <button type="button" id="btn-cancel-security" class="btn btn-secondary">Cancel Installation</button>
+            <button type="button" id="btn-confirm-security" class="btn btn-primary">Proceed &amp; Install Application</button>
+        </div>
+    </div>
+</div>
+
+<!-- Member edit drawer (slide-over) -->
+<div class="drawer-overlay" id="member-drawer-overlay" onclick="if(event.target===this)closeMemberDrawer()">
+    <aside class="member-drawer" id="member-drawer">
+        <div id="member-drawer-content">
+            <div class="drawer-loading mono">LOADING MEMBER…</div>
+        </div>
+    </aside>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Tab switching via sidebar links
+    document.querySelectorAll('.admin-nav a').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            activateTab(link.getAttribute('data-tab'));
+            history.replaceState(null, '', '#' + link.getAttribute('data-tab'));
+        });
+    });
+
+    function activateTab(tab) {
+        document.querySelectorAll('.admin-nav a').forEach(function (a) {
+            a.classList.toggle('active', a.getAttribute('data-tab') === tab);
+        });
+        document.querySelectorAll('.tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.id === 'panel-' + tab);
+        });
+    }
+
+    // Deep-link to a tab on load
+    (function () {
+        var hash = window.location.hash.replace('#', '');
+        if (hash && document.getElementById('panel-' + hash)) {
+            activateTab(hash);
+        }
+    })();
+
+    function toggleRow(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+    }
+
+    // Type-to-confirm destructive action modal
+    var confirmSlug = '';
+    function openConfirm(slug, title, desc) {
+        confirmSlug = slug;
+        document.getElementById('confirm-title').textContent = title;
+        document.getElementById('confirm-desc').innerHTML = desc;
+        document.getElementById('confirm-input').value = '';
+        document.getElementById('confirm-submit').disabled = true;
+        document.getElementById('confirm-form').action = '/admin/apps/' + slug.split('-').pop() + '/delete';
+        // For roles, the action differs
+        if (slug.indexOf('role-') === 0) {
+            document.getElementById('confirm-form').action = '/admin/roles/' + slug.split('-').pop() + '/delete';
+        }
+        document.getElementById('confirm-modal').style.display = 'flex';
+        document.getElementById('confirm-input').focus();
+    }
+    function closeConfirm() {
+        document.getElementById('confirm-modal').style.display = 'none';
+    }
+    document.getElementById('confirm-input').addEventListener('input', function (e) {
+        document.getElementById('confirm-submit').disabled = (e.target.value.trim() !== confirmSlug.split('-').pop());
+    });
+    document.getElementById('confirm-modal').addEventListener('click', function (e) {
+        if (e.target === this) closeConfirm();
+    });
+
+    // ---- Member drawer (slide-over) ----
+    function openMemberDrawer(userId) {
+        var overlay = document.getElementById('member-drawer-overlay');
+        var content = document.getElementById('member-drawer-content');
+        content.innerHTML = '<div class="drawer-loading mono">LOADING MEMBER…</div>';
+        overlay.classList.add('open');
+        document.body.classList.add('drawer-open');
+        fetch('/admin/members/' + userId, { headers: { 'HX-Request': 'true' } })
+            .then(function (r) { return r.text(); })
+            .then(function (html) { content.innerHTML = html; })
+            .catch(function () { content.innerHTML = '<div class="drawer-error mono">Failed to load member.</div>'; });
+    }
+    function closeMemberDrawer() {
+        document.getElementById('member-drawer-overlay').classList.remove('open');
+        document.body.classList.remove('drawer-open');
+    }
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeMemberDrawer();
+    });
+
+    // ---- Bulk selection ----
+    function refreshBulk() {
+        var checks = document.querySelectorAll('#member-rows .row-check:checked');
+        var count = checks.length;
+        var bar = document.getElementById('bulk-bar');
+        var ids = document.getElementById('bulk-ids');
+        if (bar) bar.classList.toggle('active', count > 0);
+        var label = document.getElementById('bulk-count');
+        if (label) label.textContent = count + ' selected';
+        if (ids) {
+            ids.innerHTML = '';
+            checks.forEach(function (c) {
+                var inp = document.createElement('input');
+                inp.type = 'hidden'; inp.name = 'user_ids'; inp.value = c.value;
+                ids.appendChild(inp);
+            });
+        }
+    }
+    document.addEventListener('change', function (e) {
+        if (e.target.classList && e.target.classList.contains('row-check')) refreshBulk();
+        if (e.target.classList && e.target.classList.contains('row-check-all')) {
+            var checked = e.target.checked;
+            document.querySelectorAll('#member-rows .row-check').forEach(function (c) { c.checked = checked; });
+            refreshBulk();
+        }
+        // Show role selector when bulk action = set_role
+        if (e.target && e.target.name === 'action') {
+            var roleSel = document.getElementById('bulk-role');
+            if (roleSel) roleSel.style.display = (e.target.value === 'set_role') ? 'inline-block' : 'none';
+        }
+    });
+    // Re-bind bulk after htmx swaps the table
+    document.body.addEventListener('htmx:afterSwap', function () { refreshBulk(); });
+
+    // ---- Security Pre-Check & Confirmation Flow ----
+    var currentStagingId = null;
+    var currentAppName = null;
+    var currentAppSlug = null;
+    var currentAppEntry = null;
+
+    function openSecurityLoading(title, msg) {
+        document.getElementById('security-loading-title').textContent = title || 'Security Pre-Check in Progress';
+        document.getElementById('security-loading-msg').textContent = msg || 'Staging package & running static AST security audit...';
+        document.getElementById('security-loading-modal').style.display = 'flex';
+    }
+    function closeSecurityLoading() {
+        document.getElementById('security-loading-modal').style.display = 'none';
+    }
+
+    function openSecurityReport(data) {
+        currentStagingId = data.staging_id;
+        currentAppName = data.name;
+        currentAppSlug = data.slug;
+        currentAppEntry = data.entry_point;
+
+        var report = data.report;
+        var badge = document.getElementById('sec-risk-badge');
+        badge.textContent = report.risk_level;
+        badge.className = 'badge ' + (
+            report.risk_level === 'CLEAN' ? 'badge-success' :
+            report.risk_level === 'LOW' ? 'badge-info' :
+            report.risk_level === 'MEDIUM' ? 'badge-warning' : 'badge-danger'
+        );
+
+        document.getElementById('sec-app-info').textContent = data.name + ' (slug: ' + data.slug + ', entrypoint: ' + (data.entry_point || 'app:app') + ')';
+        document.getElementById('sec-stat-files').textContent = report.files_scanned || 0;
+        document.getElementById('sec-stat-py').textContent = report.py_files_scanned || 0;
+        document.getElementById('sec-stat-findings').textContent = (report.findings && report.findings.length) ? report.findings.length : 0;
+
+        var banner = document.getElementById('sec-summary-banner');
+        banner.className = 'alert ' + (report.is_safe ? (report.findings && report.findings.length ? 'alert-info' : 'alert-success') : 'alert-danger');
+        banner.textContent = report.summary || 'Security scan completed.';
+
+        var container = document.getElementById('sec-findings-container');
+        container.innerHTML = '';
+
+        if (!report.findings || report.findings.length === 0) {
+            container.innerHTML = '<div class="text-muted mono p-3 mb-3" style="background:var(--surface-2); border-radius:var(--radius-sm); border:1px solid var(--border); font-size:0.85rem;">✓ No suspicious calls, command injections, or dangerous dependencies detected. Clean static AST audit.</div>';
+        } else {
+            report.findings.forEach(function(f) {
+                var card = document.createElement('div');
+                card.className = 'finding-card severity-' + (f.severity || 'INFO');
+                
+                var head = document.createElement('div');
+                head.className = 'finding-header';
+                
+                var title = document.createElement('span');
+                title.className = 'finding-title';
+                title.textContent = (f.category || 'Security Issue') + ' — ' + f.message;
+                
+                var sevBadge = document.createElement('span');
+                sevBadge.className = 'badge ' + (f.severity === 'CRITICAL' ? 'badge-danger' : (f.severity === 'HIGH' ? 'badge-danger' : (f.severity === 'MEDIUM' ? 'badge-warning' : 'badge-info')));
+                sevBadge.textContent = f.severity;
+                
+                head.appendChild(title);
+                head.appendChild(sevBadge);
+                card.appendChild(head);
+
+                if (f.file || f.line) {
+                    var meta = document.createElement('div');
+                    meta.className = 'finding-meta';
+                    meta.textContent = (f.file || 'unknown') + (f.line ? (':' + f.line) : '');
+                    card.appendChild(meta);
+                }
+
+                if (f.snippet) {
+                    var snippet = document.createElement('div');
+                    snippet.className = 'finding-snippet';
+                    snippet.textContent = f.snippet;
+                    card.appendChild(snippet);
+                }
+
+                container.appendChild(card);
+            });
+        }
+
+        var confirmBtn = document.getElementById('btn-confirm-security');
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Proceed & Install Application';
+        if (report.risk_level === 'CRITICAL' || report.risk_level === 'HIGH') {
+            confirmBtn.className = 'btn btn-danger';
+        } else {
+            confirmBtn.className = 'btn btn-primary';
+        }
+
+        document.getElementById('security-modal').style.display = 'flex';
+    }
+
+    function closeSecurityReport() {
+        document.getElementById('security-modal').style.display = 'none';
+    }
+
+    var cancelSecBtn = document.getElementById('btn-cancel-security');
+    if (cancelSecBtn) {
+        cancelSecBtn.addEventListener('click', function() {
+            if (currentStagingId) {
+                fetch('/admin/apps/cancel-staged', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ staging_id: currentStagingId })
+                }).catch(function() {});
+                currentStagingId = null;
+            }
+            closeSecurityReport();
+        });
+    }
+
+    var confirmSecBtn = document.getElementById('btn-confirm-security');
+    if (confirmSecBtn) {
+        confirmSecBtn.addEventListener('click', function() {
+            if (!currentStagingId) return;
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Installing & Initializing Sub-App...';
+
+            fetch('/admin/apps/install-confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    staging_id: currentStagingId,
+                    name: currentAppName,
+                    slug: currentAppSlug,
+                    entry_point: currentAppEntry
+                })
+            })
+            .then(function(r) {
+                return r.json().catch(function() { return { success: false, error: 'Server returned HTTP ' + r.status }; });
+            })
+            .then(function(res) {
+                if (res && res.success) {
+                    window.location.href = '/admin';
+                } else {
+                    alert('Installation failed: ' + ((res && res.error) || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.textContent = 'Proceed & Install Application';
+                }
+            })
+            .catch(function(err) {
+                alert('Network error during installation: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Proceed & Install Application';
+            });
+        });
+    }
+
+    // Intercept Git Install form
+    var gitForm = document.getElementById('form-install-git');
+    if (gitForm) {
+        gitForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var formData = new FormData(gitForm);
+            openSecurityLoading('Cloning & Analyzing Repository', 'Pulling git repository into isolated sandbox & executing static security analysis...');
+            
+            fetch('/admin/apps/precheck-git', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) {
+                return r.json().catch(function() {
+                    return { success: false, error: 'Server returned status HTTP ' + r.status };
+                });
+            })
+            .then(function(res) {
+                closeSecurityLoading();
+                if (res && res.success) {
+                    openSecurityReport(res);
+                } else {
+                    alert('Pre-check failed: ' + ((res && res.error) || 'Unknown error'));
+                }
+            })
+            .catch(function(err) {
+                closeSecurityLoading();
+                alert('Request failed: ' + err.message);
+            });
+        });
+    }
+
+    // Intercept ZIP Install form
+    var zipForm = document.getElementById('form-install-zip');
+    if (zipForm) {
+        zipForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var formData = new FormData(zipForm);
+            openSecurityLoading('Extracting & Analyzing ZIP Package', 'Safely unpacking archive in sandbox & executing static security analysis...');
+            
+            fetch('/admin/apps/precheck-zip', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(function(r) {
+                return r.json().catch(function() {
+                    return { success: false, error: 'Server returned status HTTP ' + r.status };
+                });
+            })
+            .then(function(res) {
+                closeSecurityLoading();
+                if (res && res.success) {
+                    openSecurityReport(res);
+                } else {
+                    alert('Pre-check failed: ' + ((res && res.error) || 'Unknown error'));
+                }
+            })
+            .catch(function(err) {
+                closeSecurityLoading();
+                alert('Request failed: ' + err.message);
+            });
+        });
+    }
+
+    // Auto-populate App Name and Slug from selected zip file name
+    var zipInput = document.getElementById('zip_file_input');
+    if (zipInput) {
+        zipInput.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                var rawName = this.files[0].name.replace(/\.zip$/i, '');
+                var nameField = document.getElementById('zip_app_name');
+                var slugField = document.getElementById('zip_app_slug');
+                if (nameField && !nameField.value.trim()) {
+                    var formatted = rawName.replace(/[-_]/g, ' ').replace(/\b\w/g, function(l) { return l.toUpperCase(); });
+                    nameField.value = formatted;
+                }
+                if (slugField && !slugField.value.trim()) {
+                    slugField.value = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                }
+            }
+        });
+    }
+
+    // Activate members tab when deep-linked via /admin/members
+    (function () {
+        var active = '{{ active_tab or "" }}';
+        if (active && document.getElementById('panel-' + active)) activateTab(active);
+    })();
+</script>
+{% endblock %}

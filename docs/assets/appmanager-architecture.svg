@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1120"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="480" rx="16" fill="url(#bgGrad)" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Title Header -->
+  <g transform="translate(480, 45)">
+    <text text-anchor="middle" fill="#f8fafc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="800" letter-spacing="0.5">AppManager Architecture &amp; Extension Ecosystem</text>
+    <text text-anchor="middle" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="500" y="24">Multi-Tenant WSGI Sub-App Dispatcher • Hook &amp; Slot System • Developer SDK</text>
+  </g>
+
+  <!-- Left: Client / Ingress -->
+  <g transform="translate(40, 110)">
+    <rect width="180" height="320" rx="12" fill="url(#cardGrad)" stroke="#334155" stroke-width="1.5"/>
+    <rect width="180" height="38" rx="12" fill="#1e293b"/>
+    <text x="90" y="24" text-anchor="middle" fill="#38bdf8" font-family="sans-serif" font-size="13" font-weight="700">🌐 CLIENT / HTTP</text>
+    
+    <g transform="translate(15, 60)">
+      <rect width="150" height="46" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="75" y="20" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="11" font-weight="600">GET /apps/slug/*</text>
+      <text x="75" y="36" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="10">Sub-App Traffic</text>
+    </g>
+
+    <g transform="translate(15, 120)">
+      <rect width="150" height="46" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="75" y="20" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="11" font-weight="600">GET /dashboard</text>
+      <text x="75" y="36" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="10">Portal Catalog</text>
+    </g>
+
+    <g transform="translate(15, 180)">
+      <rect width="150" height="46" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="75" y="20" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="11" font-weight="600">POST /admin/*</text>
+      <text x="75" y="36" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="10">Admin &amp; Config</text>
+    </g>
+
+    <g transform="translate(15, 240)">
+      <rect width="150" height="46" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="75" y="20" text-anchor="middle" fill="#f8fafc" font-family="monospace" font-size="11" font-weight="600">GET /api/v1/*</text>
+      <text x="75" y="36" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="10">Headless REST API</text>
+    </g>
+  </g>
+
+  <!-- Middle: AppManager Host Core -->
+  <g transform="translate(260, 110)">
+    <rect width="380" height="320" rx="12" fill="url(#cardGrad)" stroke="#6366f1" stroke-width="1.5"/>
+    <rect width="380" height="38" rx="12" fill="#312e81" opacity="0.6"/>
+    <text x="190" y="24" text-anchor="middle" fill="#818cf8" font-family="sans-serif" font-size="13" font-weight="700">⚡ APPMANAGER HOST CORE</text>
+
+    <!-- Dispatcher Box -->
+    <g transform="translate(20, 50)">
+      <rect width="340" height="60" rx="8" fill="#0f172a" stroke="#4338ca"/>
+      <text x="170" y="22" text-anchor="middle" fill="#c7d2fe" font-family="sans-serif" font-size="12" font-weight="700">DynamicAppDispatcherMiddleware</text>
+      <text x="170" y="42" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="10">Auth Check • Injects HTTP_X_APPMANAGER_* Headers</text>
+    </g>
+
+    <!-- Hook System Box -->
+    <g transform="translate(20, 120)">
+      <rect width="340" height="85" rx="8" fill="#0f172a" stroke="#a855f7"/>
+      <text x="170" y="20" text-anchor="middle" fill="#e9d5ff" font-family="sans-serif" font-size="12" font-weight="700">🧩 Pluggable Hook &amp; Slot System</text>
+      <text x="170" y="40" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="10">Slots: user_badge • dashboard_widget • nav_item</text>
+      <text x="170" y="58" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="10">Hooks: on_app_installed • on_user_login • on_cron</text>
+      <text x="170" y="74" text-anchor="middle" fill="#c084fc" font-family="monospace" font-size="9">{{ render_slot('slot_name', **kwargs) }}</text>
+    </g>
+
+    <!-- Host State & Storage -->
+    <g transform="translate(20, 215)">
+      <rect width="162" height="85" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="81" y="22" text-anchor="middle" fill="#facc15" font-family="sans-serif" font-size="11" font-weight="700">🗄️ SQLite / MySQL</text>
+      <text x="81" y="42" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">InstalledApp (settings_json)</text>
+      <text x="81" y="58" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">UserAppPermission</text>
+      <text x="81" y="72" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">AppExtensionData</text>
+    </g>
+
+    <g transform="translate(198, 215)">
+      <rect width="162" height="85" rx="8" fill="#0f172a" stroke="#1e293b"/>
+      <text x="81" y="22" text-anchor="middle" fill="#34d399" font-family="sans-serif" font-size="11" font-weight="700">🔔 Signals &amp; Telemetry</text>
+      <text x="81" y="42" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">Blinker Event Signals</text>
+      <text x="81" y="58" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">Zero-Overhead Logging</text>
+      <text x="81" y="72" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="9">Health Evaluation Logs</text>
+    </g>
+  </g>
+
+  <!-- Right: Installed Sub-Apps & Extensions -->
+  <g transform="translate(680, 110)">
+    <rect width="240" height="320" rx="12" fill="url(#cardGrad)" stroke="#334155" stroke-width="1.5"/>
+    <rect width="240" height="38" rx="12" fill="#1e293b"/>
+    <text x="120" y="24" text-anchor="middle" fill="#34d399" font-family="sans-serif" font-size="13" font-weight="700">📦 SUB-APPS &amp; EXTENSIONS</text>
+
+    <!-- Sub App 1 -->
+    <g transform="translate(15, 50)">
+      <rect width="210" height="52" rx="8" fill="#0f172a" stroke="#0ea5e9"/>
+      <text x="10" y="20" fill="#38bdf8" font-family="sans-serif" font-size="11" font-weight="700">🚀 Standalone Flask Sub-App</text>
+      <text x="10" y="38" fill="#94a3b8" font-family="monospace" font-size="9">appmanager.sdk • /health</text>
+    </g>
+
+    <!-- Sub App 2 -->
+    <g transform="translate(15, 110)">
+      <rect width="210" height="52" rx="8" fill="#0f172a" stroke="#8b5cf6"/>
+      <text x="10" y="20" fill="#c084fc" font-family="sans-serif" font-size="11" font-weight="700">🧩 UI Slot Extension Plugin</text>
+      <text x="10" y="38" fill="#94a3b8" font-family="monospace" font-size="9">Mounts to UI slots &amp; settings</text>
+    </g>
+
+    <!-- Sub App 3 -->
+    <g transform="translate(15, 170)">
+      <rect width="210" height="52" rx="8" fill="#0f172a" stroke="#f59e0b"/>
+      <text x="10" y="20" fill="#fbbf24" font-family="sans-serif" font-size="11" font-weight="700">⚡ HTMX / Reactive Sub-App</text>
+      <text x="10" y="38" fill="#94a3b8" font-family="monospace" font-size="9">Server-driven interactive UI</text>
+    </g>
+
+    <!-- Sub App 4 -->
+    <g transform="translate(15, 230)">
+      <rect width="210" height="70" rx="8" fill="#0f172a" stroke="#10b981"/>
+      <text x="10" y="20" fill="#4ade80" font-family="sans-serif" font-size="11" font-weight="700">🛠️ Developer Tooling &amp; CLI</text>
+      <text x="10" y="38" fill="#94a3b8" font-family="monospace" font-size="9">appmanager dev &lt;slug&gt;</text>
+      <text x="10" y="54" fill="#94a3b8" font-family="monospace" font-size="9">appmanager new-subapp</text>
+    </g>
+  </g>
+
+  <!-- Connectors -->
+  <path d="M 220 190 L 260 190" stroke="#6366f1" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="4,4"/>
+  <path d="M 220 270 L 260 270" stroke="#6366f1" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="4,4"/>
+  <path d="M 640 180 L 680 180" stroke="#34d399" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 640 270 L 680 270" stroke="#34d399" stroke-width="2" marker-end="url(#arrow)"/>
+</svg>

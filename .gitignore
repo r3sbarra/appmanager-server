@@ -1,0 +1,48 @@
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Packaging & Distribution
+dist/
+build/
+*.egg-info/
+*.egg
+
+# MkDocs generated site
+site/
+
+# Database & Instance uploads
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Dynamic sub-apps storage (ignore all sub-apps, keep directory & initial seeds)
+installed_apps/*
+!installed_apps/.gitkeep
+!installed_apps/sample-counter/
+!installed_apps/template-app/
+!installed_apps/extension-flairs/
+
+# Environment variables & local secrets
+.env
+.env.local
+.env.*.local
+
+# IDE & OS metadata
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

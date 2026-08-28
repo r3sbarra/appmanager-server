@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Assign Flairs — User Flairs{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div class="breadcrumb mono">admin / apps / extension-flairs / assign</div>
+    <h1 class="page-title">Assign Flairs</h1>
+    <p class="page-subtitle">Custom title badges for platform members</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Preset Flair Badges</h2>
+        <span class="badge badge-accent">click to apply</span>
+    </div>
+    <div class="card-body">
+        <div class="flair-presets">
+            {% for preset in presets %}
+                <button type="button" class="preset-chip"
+                        data-title="{{ preset.title }}" data-color="{{ preset.color }}"
+                        style="--fc: {{ preset.color }};">
+                    {{ preset.title }}
+                </button>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header">
+        <h2 class="card-title mb-0">Member Flair Assignments</h2>
+    </div>
+    <div class="card-body">
+        <div class="table-container">
+            <table class="table table-members">
+                <thead>
+                    <tr>
+                        <th>Member</th>
+                        <th>Current Flair</th>
+                        <th>Assign / Update</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    {% set f = user_flairs.get(u.id) %}
+                    <tr>
+                        <td>
+                            <div class="member-name-row">
+                                <strong>{{ u.name or u.email }}</strong>
+                                {{ render_user_flair_badge(u.id) }}
+                            </div>
+                            <div class="text-faint mono" style="font-size:0.72rem;">{{ u.email }}</div>
+                        </td>
+                        <td>
+                            {% if f and f.title %}
+                                <span class="flair-badge" style="--fc: {{ f.color }};">{{ f.title }}</span>
+                            {% else %}
+                                <span class="text-faint" style="font-size:0.8rem;">No Flair</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form action="/admin/apps/extension-flairs/assign/set" method="POST" class="flex gap-1" style="align-items:center;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="user_id" value="{{ u.id }}">
+                                <input type="text" name="flair_title" placeholder="Flair title..." value="{{ f.title if f else '' }}" class="form-input flair-title-input" style="width:150px;">
+                                <input type="color" name="flair_color" value="{{ f.color if f else '#F5A524' }}" class="flair-color-input" style="height:30px;width:36px;padding:0;border:none;background:none;cursor:pointer;">
+                                <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
+                                {% if f and f.title %}
+                                    <button type="submit" name="action" value="clear" class="btn btn-ghost btn-sm" title="Clear Flair">✕</button>
+                                {% endif %}
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Clicking a preset chip fills the first empty flair-title input
+    document.querySelectorAll('.preset-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var title = chip.getAttribute('data-title');
+            var color = chip.getAttribute('data-color');
+            var row = chip.closest('.card').nextElementSibling;
+            var inputs = row ? row.querySelectorAll('.flair-title-input') : [];
+            var target = null;
+            for (var i = 0; i < inputs.length; i++) {
+                if (!inputs[i].value) { target = inputs[i]; break; }
+            }
+            if (!target && inputs.length) target = inputs[0];
+            if (target) {
+                target.value = title;
+                var colorInput = target.closest('form').querySelector('.flair-color-input');
+                if (colorInput) colorInput.value = color;
+            }
+        });
+    });
+</script>
+{% endblock %}

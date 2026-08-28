@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}500 — Server Error | AppManager{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:center; align-items:center; min-height:60vh;">
+    <div class="card boot-item" style="max-width:520px; text-align:center; padding:2.5rem;">
+        <div class="mono" style="font-size:4rem; font-weight:700; color:var(--warning); line-height:1; margin-bottom:0.5rem;">500</div>
+        <h1 style="font-size:1.4rem; font-weight:600; margin-bottom:1rem;">Internal Server Error</h1>
+        <p class="text-muted" style="margin-bottom:2rem; line-height:1.6;">
+            AppManager encountered an unexpected condition while processing your request. Please try refreshing the page or contact system administrators if the issue persists.
+        </p>
+        <div class="flex-center" style="justify-content:center; gap:1rem;">
+            <a href="javascript:location.reload()" class="btn btn-primary">↻ Refresh Page</a>
+            <a href="/" class="btn btn-secondary">Return to Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{
+  "name": "Counter Sub-App",
+  "slug": "sample-counter",
+  "version": "1.0.0",
+  "description": "Interactive Flask counter demonstration app",
+  "entry_point": "app:app",
+  "health_check_path": "/health"
+}
