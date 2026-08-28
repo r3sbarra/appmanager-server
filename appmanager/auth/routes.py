@@ -73,7 +73,10 @@ def request_magic_link():
         next_url = ""
 
     if not request.form.get("accept_terms"):
-        flash("You must agree to the Terms of Use and Privacy Policy to register or sign in.", "warning")
+        flash(
+            "You must agree to the Terms of Use and Privacy Policy to register or sign in.",
+            "warning",
+        )
         return redirect(url_for("auth.login", next=next_url))
 
     if not email or "@" not in email:
@@ -271,4 +274,3 @@ def terms():
 @auth_bp.route("/privacy")
 def privacy():
     return render_template("privacy.html")
-

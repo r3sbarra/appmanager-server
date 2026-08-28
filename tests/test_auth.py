@@ -40,7 +40,9 @@ def test_magic_link_fails_without_terms_acceptance(client):
 
 def test_magic_link_flow_dev_mode(client, app):
     # 1. Request magic link with ALLOW_DEV_MAGIC_LOGIN=True
-    res = client.post("/auth/magic-link", data={"email": "test@example.com", "accept_terms": "true"})
+    res = client.post(
+        "/auth/magic-link", data={"email": "test@example.com", "accept_terms": "true"}
+    )
     assert res.status_code == 200
     assert b"Developer Mode Preview" in res.data
 
@@ -67,7 +69,11 @@ def test_magic_link_fails_when_smtp_and_dev_mode_disabled(app):
     app.config["SMTP_SERVER"] = ""
     client = app.test_client()
 
-    res = client.post("/auth/magic-link", data={"email": "user@example.com", "accept_terms": "true"}, follow_redirects=True)
+    res = client.post(
+        "/auth/magic-link",
+        data={"email": "user@example.com", "accept_terms": "true"},
+        follow_redirects=True,
+    )
     assert res.status_code == 200
     assert b"Email delivery (SMTP) is not configured" in res.data
 
@@ -94,7 +100,9 @@ def test_admin_emails_config_provisioning(client, app):
         assert u1.role == "user"
 
     # Second user who IS in ADMIN_EMAILS
-    client.post("/auth/magic-link", data={"email": "designated-admin@example.com", "accept_terms": "true"})
+    client.post(
+        "/auth/magic-link", data={"email": "designated-admin@example.com", "accept_terms": "true"}
+    )
     with app.app_context():
         t2 = MagicLinkToken.query.filter_by(email="designated-admin@example.com").first()
         token2 = t2.token
@@ -115,7 +123,11 @@ def test_second_user_is_regular_user(client, app):
         db.session.commit()
 
     # Request & verify magic link for second user
-    client.post("/auth/magic-link", data={"email": "user2@example.com", "accept_terms": "true"}, environ_base={"REMOTE_ADDR": "127.0.0.99"})
+    client.post(
+        "/auth/magic-link",
+        data={"email": "user2@example.com", "accept_terms": "true"},
+        environ_base={"REMOTE_ADDR": "127.0.0.99"},
+    )
     with app.app_context():
         t = MagicLinkToken.query.filter_by(email="user2@example.com").first()
         token_str = t.token
