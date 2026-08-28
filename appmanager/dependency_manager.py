@@ -282,12 +282,18 @@ def install_app_dependencies(
     timeout: int = 180,
 ) -> Tuple[bool, str]:
     """
-    Installs sub-app dependencies from requirements.txt based on configured venv mode.
+    Installs sub-app dependencies from requirements.txt and installs the sub-app itself
+    into the virtual environment if it is an installable Python package (has pyproject.toml or setup.py).
     Returns (success, output_or_error_message).
     """
     req_file = os.path.join(app_dir, "requirements.txt")
-    if not os.path.exists(req_file):
-        return True, "No requirements.txt found (nothing to install)."
+    has_reqs = os.path.exists(req_file)
+    has_pkg = os.path.exists(os.path.join(app_dir, "pyproject.toml")) or os.path.exists(
+        os.path.join(app_dir, "setup.py")
+    )
+
+    if not has_reqs and not has_pkg:
+        return True, "No requirements.txt or pyproject.toml found (nothing to install)."
 
     if venv_mode == "isolated":
         venv_dir = os.path.join(app_dir, ".venv")
@@ -314,26 +320,66 @@ def install_app_dependencies(
         except Exception:
             pass
 
-        install_cmd = [pip_path, "install", "-r", req_file]
+        pip_base = [pip_path, "install"]
     else:
         # Singular shared host virtual environment
-        install_cmd = [sys.executable, "-m", "pip", "install", "-r", req_file]
+        pip_base = [sys.executable, "-m", "pip", "install"]
 
-    try:
-        proc = subprocess.run(
-            install_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if proc.returncode == 0:
-            return True, proc.stdout or "Dependencies installed successfully."
-        else:
-            return False, f"Pip installation failed (code {proc.returncode}): {proc.stderr}"
-    except subprocess.TimeoutExpired:
-        return False, f"Dependency installation timed out after {timeout} seconds."
-    except Exception as e:
-        return False, f"Unexpected error during dependency installation: {str(e)}"
+    outputs: List[str] = []
+
+    # 1. Install requirements.txt if present
+    if has_reqs:
+        try:
+            proc = subprocess.run(
+                pip_base + ["-r", req_file],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if proc.returncode != 0:
+                return (
+                    False,
+                    f"Pip requirements installation failed (code {proc.returncode}): {proc.stderr}",
+                )
+            if proc.stdout:
+                outputs.append(proc.stdout.strip())
+        except subprocess.TimeoutExpired:
+            return False, f"Dependency installation timed out after {timeout} seconds."
+        except Exception as e:
+            return False, f"Unexpected error during requirements installation: {str(e)}"
+
+    # 2. Install package itself if installable (pyproject.toml or setup.py present)
+    if has_pkg:
+        try:
+            # Attempt editable install, fallback to standard directory install
+            proc = subprocess.run(
+                pip_base + ["-e", app_dir],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if proc.returncode != 0:
+                proc = subprocess.run(
+                    pip_base + [app_dir],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            if proc.returncode != 0:
+                return (
+                    False,
+                    f"Package self-installation failed (code {proc.returncode}): {proc.stderr}",
+                )
+            if proc.stdout:
+                outputs.append(proc.stdout.strip())
+        except subprocess.TimeoutExpired:
+            return False, f"Package installation timed out after {timeout} seconds."
+        except Exception as e:
+            return False, f"Unexpected error during package installation: {str(e)}"
+
+    return True, "\n".join(
+        outputs
+    ) if outputs else "Package and dependencies installed successfully."
 
 
 def analyze_uninstall_dependencies(

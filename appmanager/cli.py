@@ -983,6 +983,19 @@ def check_deps_cli(
             query = query.filter_by(slug=slug)
         apps = query.all()
 
+        if not apps and slug and slug.lower() != "all":
+            target_dir = os.path.join(installed_apps_dir, slug) if not os.path.isabs(slug) else slug
+            if os.path.isdir(target_dir):
+                manifest = parse_manifest(target_dir) or {}
+                app_name = manifest.get("name", slug)
+                apps = [
+                    type(
+                        "DiskApp",
+                        (),
+                        {"name": app_name, "slug": os.path.basename(target_dir.rstrip("/"))},
+                    )()
+                ]
+
         if not apps:
             print("No matching installed applications found.\n")
             return 0

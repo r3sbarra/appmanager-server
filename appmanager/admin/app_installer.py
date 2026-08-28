@@ -2,6 +2,7 @@ import ast
 import importlib.util
 import inspect
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -29,6 +30,8 @@ from appmanager.security import (
 )
 from appmanager.security_scanner import SecurityScanReport, run_security_scan
 from appmanager.signals import subapp_installed, subapp_reloaded, subapp_uninstalled, subapp_updated
+
+logger = logging.getLogger("appmanager.installer")
 
 
 def sanitize_slug(slug_text: str) -> str:
@@ -217,18 +220,34 @@ def validate_subapp_package(path_or_zip: str) -> Tuple[bool, List[str], Dict[str
 
 def discover_entrypoint(app_dir: str) -> str:
     """
-    Search for common Flask entrypoint files (app.py, wsgi.py, main.py, run.py) or manifest.json.
-    Returns 'module_name:app_variable' string e.g. 'app:app'
+    Search for common Flask entrypoint files (app.py, wsgi.py, main.py, run.py, src/app.py, packages)
+    or manifest.json. Returns 'module_name:app_variable' string e.g. 'app:app'
     """
     manifest = parse_manifest(app_dir)
     if manifest and "entry_point" in manifest:
         return manifest["entry_point"]
 
-    candidates = ["app.py", "wsgi.py", "main.py", "run.py"]
+    candidates = [
+        "app.py",
+        "wsgi.py",
+        "main.py",
+        "run.py",
+        "server.py",
+        os.path.join("src", "app.py"),
+        os.path.join("src", "main.py"),
+        os.path.join("src", "wsgi.py"),
+    ]
     for candidate in candidates:
         if os.path.exists(os.path.join(app_dir, candidate)):
-            module_name = candidate[:-3]  # Strip .py
+            module_name = candidate[:-3].replace(os.sep, ".")  # Strip .py and normalize slashes
             return f"{module_name}:app"
+
+    # Check for package directories with __init__.py (e.g. appmanager, app, <slug>)
+    slug = os.path.basename(app_dir.rstrip("/\\"))
+    for pkg_cand in [slug, slug.replace("-", "_"), "app", "appmanager"]:
+        init_file = os.path.join(app_dir, pkg_cand, "__init__.py")
+        if os.path.exists(init_file):
+            return f"{pkg_cand}:create_app"
 
     # Default fallback
     return "app:app"
@@ -263,7 +282,9 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
 
     module_path = module_path_or_err
     if not os.path.exists(module_path):
-        raise FileNotFoundError(f"Entrypoint file '{module_name}.py' not found in {app_dir}")
+        raise FileNotFoundError(
+            f"Entrypoint module/file '{module_name}' was not found in sub-app package."
+        )
 
     # Unique scoped module spec name to avoid sys.path pollution
     slug = os.path.basename(app_dir)
@@ -402,6 +423,7 @@ def stage_git_repo(
     if not is_safe_repo_url(repo_url):
         raise ValueError(f"Invalid or unsafe git repository URL: '{repo_url}'")
 
+    logger.info("Staging Git repository installation from '%s'", repo_url)
     cleanup_expired_staged_sessions()
 
     import tempfile
@@ -426,6 +448,7 @@ def stage_git_repo(
                     res.stderr.strip() or f"Failed to clone repository from '{repo_url}'."
                 )
     except Exception as git_err:
+        logger.error("Failed to clone Git repository '%s': %s", repo_url, git_err)
         if os.path.exists(temp_stage_dir):
             shutil.rmtree(temp_stage_dir, ignore_errors=True)
         raise ValueError(f"Failed to clone Git repository: {git_err}")
@@ -471,6 +494,13 @@ def stage_git_repo(
         "created_at": time.time(),
     }
     _write_staging_metadata(temp_stage_dir, _staged_installations[staging_id])
+    logger.info(
+        "Staged Git app '%s' (staging_id=%s, risk=%s, safe=%s)",
+        resolved_slug,
+        staging_id,
+        scan_report.risk_level,
+        scan_report.is_safe,
+    )
 
     return staging_id, scan_report, manifest
 
@@ -553,6 +583,13 @@ def stage_zip_file(
         "created_at": time.time(),
     }
     _write_staging_metadata(temp_stage_dir, _staged_installations[staging_id])
+    logger.info(
+        "Staged ZIP package '%s' (filename: %s, risk=%s, safe=%s)",
+        resolved_slug,
+        filename,
+        scan_report.risk_level,
+        scan_report.is_safe,
+    )
 
     return staging_id, scan_report, manifest
 
@@ -581,6 +618,7 @@ def finalize_staged_installation(
 
     final_slug = sanitize_slug(slug or session.get("slug") or session.get("name") or "sub-app")
     target_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], final_slug)
+    logger.info("Finalizing installation of staged app '%s' into '%s'", final_slug, target_dir)
 
     if os.path.exists(target_dir):
         if os.path.exists(staging_dir):
@@ -631,6 +669,7 @@ def finalize_staged_installation(
             else:
                 initial_settings[s_key] = s_val
 
+    logger.info("Installing dependencies for '%s'...", final_slug)
     install_dependencies(target_dir)
 
     installed_app = InstalledApp(

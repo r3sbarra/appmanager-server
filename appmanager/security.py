@@ -116,20 +116,35 @@ def is_safe_repo_url(repo_url: str) -> bool:
 def validate_entrypoint_path(app_dir: str, entry_point: str) -> Tuple[bool, str]:
     """
     Ensures an entrypoint string does not escape the app directory via directory traversal.
+    Supports module names ('app'), dotted paths ('src.app'), and package paths ('appmanager').
     """
     if ":" in entry_point:
         module_name = entry_point.split(":", 1)[0]
     else:
         module_name = entry_point
 
-    # Disallow path separators in module name
-    if "/" in module_name or "\\" in module_name or ".." in module_name:
+    # Disallow parent references
+    if ".." in module_name:
         return False, "Entrypoint module name cannot contain path separators or parent references."
 
-    module_file = os.path.join(app_dir, f"{module_name}.py")
-    abs_module = os.path.abspath(module_file)
     abs_app_dir = os.path.abspath(app_dir)
 
+    # 1. Direct .py file path
+    if module_name.endswith(".py"):
+        cand_path = os.path.join(app_dir, module_name)
+    else:
+        cand_path = os.path.join(app_dir, f"{module_name}.py")
+        if not os.path.exists(cand_path):
+            # 2. Check dotted or nested path: e.g. src.app -> src/app.py or pkg/__init__.py
+            parts = module_name.replace("\\", "/").replace(".", "/").split("/")
+            cand_py = os.path.join(app_dir, *parts) + ".py"
+            cand_init = os.path.join(app_dir, *parts, "__init__.py")
+            if os.path.exists(cand_py):
+                cand_path = cand_py
+            elif os.path.exists(cand_init):
+                cand_path = cand_init
+
+    abs_module = os.path.abspath(cand_path)
     if not abs_module.startswith(abs_app_dir):
         return False, "Entrypoint file escapes application directory."
 

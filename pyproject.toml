@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "appmanager-server"
-version = "0.3.0"
+version = "0.3.1"
 description = "High-performance multi-tenant WSGI portal, dynamic sub-app dispatcher, and extension framework for Python/Flask."
 readme = "README.md"
 authors = [

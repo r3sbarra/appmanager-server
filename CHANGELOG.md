@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] - 2026-08-28
+
+### Fixed
+- **App & Role Deletion Type-To-Confirm Modal**: Fixed modal validation logic and dynamic form URL in Admin Dashboard where typing the exact app/role slug did not enable the confirmation submission.
+
+---
+
 ## [0.3.0] - 2026-08-28
 
 ### Added

@@ -207,7 +207,7 @@
                                                         <button type="submit" class="btn btn-ghost btn-sm" title="Set as default landing app">Default</button>
                                                     {% endif %}
                                                 </form>
-                                                <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('uninstall-{{ app.id }}', 'Uninstall {{ app.name }}?', 'Type <code>{{ app.slug }}</code> to confirm')">Uninstall</button>
+                                                <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('/admin/apps/{{ app.id }}/delete', '{{ app.slug }}', 'Uninstall {{ app.name }}?', 'Type <code>{{ app.slug }}</code> to confirm')">Uninstall</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -333,7 +333,7 @@
                                     <td class="num">{{ role_counts.get(r.slug, 0) }}</td>
                                     <td>
                                         {% if not r.is_system %}
-                                            <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('role-{{ r.id }}', 'Delete role {{ r.name }}?', 'Type <code>{{ r.slug }}</code> to confirm')">Delete</button>
+                                            <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('/admin/roles/{{ r.id }}/delete', '{{ r.slug }}', 'Delete role {{ r.name }}?', 'Type <code>{{ r.slug }}</code> to confirm')">Delete</button>
                                         {% else %}
                                             <span class="text-faint" style="font-size:0.75rem;">Protected</span>
                                         {% endif %}
@@ -621,18 +621,15 @@
     }
 
     // Type-to-confirm destructive action modal
-    var confirmSlug = '';
-    function openConfirm(slug, title, desc) {
-        confirmSlug = slug;
-        document.getElementById('confirm-title').textContent = title;
-        document.getElementById('confirm-desc').innerHTML = desc;
+    var expectedConfirmText = '';
+    function openConfirm(actionUrl, expectedSlug, title, desc) {
+        expectedConfirmText = (expectedSlug || '').trim();
+        document.getElementById('confirm-title').textContent = title || 'Confirm Action';
+        document.getElementById('confirm-desc').innerHTML = desc || ('Type <code>' + expectedConfirmText + '</code> to confirm');
         document.getElementById('confirm-input').value = '';
+        document.getElementById('confirm-input').placeholder = expectedConfirmText;
         document.getElementById('confirm-submit').disabled = true;
-        document.getElementById('confirm-form').action = '/admin/apps/' + slug.split('-').pop() + '/delete';
-        // For roles, the action differs
-        if (slug.indexOf('role-') === 0) {
-            document.getElementById('confirm-form').action = '/admin/roles/' + slug.split('-').pop() + '/delete';
-        }
+        document.getElementById('confirm-form').action = actionUrl;
         document.getElementById('confirm-modal').style.display = 'flex';
         document.getElementById('confirm-input').focus();
     }
@@ -640,7 +637,7 @@
         document.getElementById('confirm-modal').style.display = 'none';
     }
     document.getElementById('confirm-input').addEventListener('input', function (e) {
-        document.getElementById('confirm-submit').disabled = (e.target.value.trim() !== confirmSlug.split('-').pop());
+        document.getElementById('confirm-submit').disabled = (e.target.value.trim() !== expectedConfirmText);
     });
     document.getElementById('confirm-modal').addEventListener('click', function (e) {
         if (e.target === this) closeConfirm();

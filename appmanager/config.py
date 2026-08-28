@@ -6,7 +6,17 @@ from dotenv import load_dotenv
 # Automatically load .env if present in current working directory or base directory
 load_dotenv()
 
-DEFAULT_BASE_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+# Resolve base directory: when running as installed package, use current working directory
+_pkg_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+if (
+    "site-packages" in _pkg_root
+    or "dist-packages" in _pkg_root
+    or not os.path.exists(os.path.join(_pkg_root, "pyproject.toml"))
+):
+    DEFAULT_BASE_DIR = os.path.abspath(os.getcwd())
+else:
+    DEFAULT_BASE_DIR = _pkg_root
+
 BASE_DIR = os.getenv("APPMANAGER_BASE_DIR", DEFAULT_BASE_DIR)
 
 
@@ -73,9 +83,16 @@ class Config:
 
     # Security settings
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+    SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in (
         "true",
         "1",
         "yes",
+    )
+
+    # Logging Configuration
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+    LOG_FORMAT = os.getenv(
+        "LOG_FORMAT",
+        "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
     )

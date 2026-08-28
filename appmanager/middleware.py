@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from typing import Any, Callable, Dict, Optional
@@ -10,6 +11,7 @@ from appmanager.database import db
 from appmanager.models import InstalledApp, User, UserAppPermission
 from appmanager.signals import subapp_reloaded
 
+logger = logging.getLogger("appmanager.dispatcher")
 VALID_SLUG_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
@@ -206,22 +208,42 @@ class DynamicAppDispatcherMiddleware:
                     environ["HTTP_X_APPMANAGER_SUBAPP_SLUG"] = slug
                     environ["HTTP_X_FORWARDED_PREFIX"] = f"/apps/{slug}"
 
+                    logger.debug(
+                        "Dispatching request '%s %s' to sub-app '%s' (user: %s)",
+                        environ.get("REQUEST_METHOD", "GET"),
+                        path_info,
+                        slug,
+                        user.email if user else "anonymous",
+                    )
+
                     # 3. Load or Retrieve Sub-App WSGI Instance
                     app_dir = os.path.join(
                         self.main_app.config["INSTALLED_APPS_DIR"], app_record.slug
                     )
                     if not os.path.exists(app_dir):
+                        logger.warning("Sub-app directory for '%s' not found at %s", slug, app_dir)
+                        is_admin = bool(user and getattr(user, "is_admin", False))
+                        debug_mode = bool(self.main_app.config.get("DEBUG", False))
+                        if is_admin or debug_mode:
+                            msg = f"App directory for '{app_record.name}' was not found on the server filesystem."
+                        else:
+                            msg = f"The '{app_record.name}' application is currently unavailable."
                         return self._send_html_response(
                             start_response,
                             500,
-                            "Installation Error",
-                            f"App directory for '{app_record.name}' was not found on the server filesystem.",
+                            "Application Unavailable",
+                            msg,
                             link_url="/",
                             link_text="Return to Home",
                         )
 
                     try:
                         if slug not in self.sub_app_cache:
+                            logger.info(
+                                "Loading sub-app '%s' into WSGI cache (entrypoint: %s)",
+                                slug,
+                                app_record.entry_point,
+                            )
                             sub_app_obj = load_wsgi_app_from_path(app_dir, app_record.entry_point)
                             # Get standard wsgi_app callable if it's a Flask instance
                             wsgi_callable = getattr(sub_app_obj, "wsgi_app", sub_app_obj)
@@ -233,11 +255,23 @@ class DynamicAppDispatcherMiddleware:
 
                         wsgi_callable = self.sub_app_cache[slug]
                     except Exception as e:
+                        import logging
+
+                        logging.getLogger("appmanager.dispatcher").exception(
+                            f"Error loading sub-app '{app_record.slug}': {e}"
+                        )
+                        is_admin = bool(user and getattr(user, "is_admin", False))
+                        debug_mode = bool(self.main_app.config.get("DEBUG", False))
+                        if is_admin or debug_mode:
+                            err_msg = f"Failed to load Flask sub-app '{app_record.name}': {str(e)}"
+                        else:
+                            err_msg = f"The '{app_record.name}' application encountered an error while starting. Please contact an administrator."
+
                         return self._send_html_response(
                             start_response,
                             500,
-                            "App Load Error",
-                            f"Failed to load Flask sub-app '{app_record.name}': {str(e)}",
+                            "Application Error",
+                            err_msg,
                             link_url="/",
                             link_text="Return to Home",
                         )

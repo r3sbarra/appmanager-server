@@ -116,3 +116,24 @@ def test_install_app_dependencies_no_reqs(tmp_path):
     ok, msg = install_app_dependencies(str(empty_dir), venv_mode="singular")
     assert ok is True
     assert "nothing to install" in msg
+
+
+def test_install_app_dependencies_package_structure(tmp_path, monkeypatch):
+    pkg_dir = tmp_path / "pkg_app"
+    pkg_dir.mkdir()
+    (pkg_dir / "pyproject.toml").write_text("[project]\nname = 'pkg-app'\nversion = '0.1.0'\n")
+
+    # Mock subprocess.run to verify pip install -e is invoked
+    called_cmds = []
+
+    def mock_run(cmd, **kwargs):
+        called_cmds.append(cmd)
+        return type(
+            "Proc", (), {"returncode": 0, "stdout": "Successfully installed pkg-app", "stderr": ""}
+        )()
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    ok, msg = install_app_dependencies(str(pkg_dir), venv_mode="singular")
+    assert ok is True
+    assert any("-e" in c and str(pkg_dir) in c for c in called_cmds)

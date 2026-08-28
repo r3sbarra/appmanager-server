@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from flask import (
@@ -23,6 +24,7 @@ from appmanager.database import db
 from appmanager.models import InstalledApp, MagicLinkToken, User, UserAppPermission
 from appmanager.security import check_rate_limit, is_safe_redirect_url
 
+logger = logging.getLogger("appmanager.auth")
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 

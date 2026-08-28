@@ -8,7 +8,7 @@ from appmanager.database import db
 from appmanager.extension import AppManager
 from appmanager.middleware import DynamicAppDispatcherMiddleware
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "AppManager",

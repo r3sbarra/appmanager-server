@@ -73,22 +73,34 @@ def system_health():
 
         db.session.execute(text("SELECT 1"))
     except Exception as e:
-        db_ok = False
-        db_error = str(e)
+        import logging
 
-    total_apps = InstalledApp.query.count()
-    active_apps = InstalledApp.query.filter_by(is_active=True).count()
+        logging.getLogger("appmanager.api").exception(f"Database health check failed: {e}")
+        db_ok = False
+        if current_app.config.get("DEBUG", False):
+            db_error = str(e)
+
+    total_apps = 0
+    active_apps = 0
+    if db_ok:
+        try:
+            total_apps = InstalledApp.query.count()
+            active_apps = InstalledApp.query.filter_by(is_active=True).count()
+        except Exception:
+            pass
 
     overall_status = "healthy" if db_ok else "unhealthy"
 
-    return jsonify(
-        {
-            "status": overall_status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "database": {"connected": db_ok, "error": db_error},
-            "apps": {"total": total_apps, "active": active_apps},
-        }
-    ), 200 if db_ok else 503
+    resp_data = {
+        "status": overall_status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database": {"connected": db_ok},
+        "apps": {"total": total_apps, "active": active_apps},
+    }
+    if db_error is not None:
+        resp_data["database"]["error"] = db_error
+
+    return jsonify(resp_data), 200 if db_ok else 503
 
 
 @api_bp.route("/apps", methods=["GET"])

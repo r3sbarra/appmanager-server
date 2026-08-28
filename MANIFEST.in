@@ -9,3 +9,10 @@ recursive-include appmanager/templates *
 recursive-include appmanager/static *
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
+recursive-exclude * .env*
+recursive-exclude * instance *
+recursive-exclude * installed_apps *
+recursive-exclude * *.db
+recursive-exclude * *.sqlite*
+recursive-exclude * .venv *
+recursive-exclude * .pytest_cache *

@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, List, Optional, Union
 
@@ -13,6 +14,26 @@ from appmanager.extensions import init_extensions
 from appmanager.health import check_all_apps_health, check_app_health
 from appmanager.middleware import DynamicAppDispatcherMiddleware
 from appmanager.models import InstalledApp, UserAppPermission
+
+
+def _setup_logging(app: Flask) -> None:
+    """
+    Configures structured logging for the AppManager package.
+    """
+    level_name = app.config.get("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, level_name, logging.INFO)
+    log_format = app.config.get(
+        "LOG_FORMAT",
+        "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
+    )
+
+    logger = logging.getLogger("appmanager")
+    logger.setLevel(log_level)
+
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(log_format))
+        logger.addHandler(handler)
 
 
 class AppManager:
@@ -52,6 +73,8 @@ class AppManager:
         for key in dir(Config):
             if key.isupper() and key not in app.config:
                 app.config[key] = getattr(Config, key)
+
+        _setup_logging(app)
 
         # Ensure base directories exist
         base_dir = app.config.get("BASE_DIR", Config.BASE_DIR)
