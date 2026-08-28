@@ -32,9 +32,15 @@ def client(app):
     return app.test_client()
 
 
+def test_magic_link_fails_without_terms_acceptance(client):
+    res = client.post("/auth/magic-link", data={"email": "test@example.com"}, follow_redirects=True)
+    assert res.status_code == 200
+    assert b"You must agree to the Terms of Use and Privacy Policy" in res.data
+
+
 def test_magic_link_flow_dev_mode(client, app):
     # 1. Request magic link with ALLOW_DEV_MAGIC_LOGIN=True
-    res = client.post("/auth/magic-link", data={"email": "test@example.com"})
+    res = client.post("/auth/magic-link", data={"email": "test@example.com", "accept_terms": "true"})
     assert res.status_code == 200
     assert b"Developer Mode Preview" in res.data
 
@@ -61,7 +67,7 @@ def test_magic_link_fails_when_smtp_and_dev_mode_disabled(app):
     app.config["SMTP_SERVER"] = ""
     client = app.test_client()
 
-    res = client.post("/auth/magic-link", data={"email": "user@example.com"}, follow_redirects=True)
+    res = client.post("/auth/magic-link", data={"email": "user@example.com", "accept_terms": "true"}, follow_redirects=True)
     assert res.status_code == 200
     assert b"Email delivery (SMTP) is not configured" in res.data
 
@@ -71,11 +77,12 @@ def test_magic_link_fails_when_smtp_and_dev_mode_disabled(app):
 
 
 def test_admin_emails_config_provisioning(client, app):
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = True
     app.config["ADMIN_EMAILS"] = ["designated-admin@example.com"]
     app.config["FIRST_USER_IS_ADMIN"] = False
 
     # First user who is NOT in ADMIN_EMAILS
-    client.post("/auth/magic-link", data={"email": "regular@example.com"})
+    client.post("/auth/magic-link", data={"email": "regular@example.com", "accept_terms": "true"})
     with app.app_context():
         t1 = MagicLinkToken.query.filter_by(email="regular@example.com").first()
         token1 = t1.token
@@ -87,7 +94,7 @@ def test_admin_emails_config_provisioning(client, app):
         assert u1.role == "user"
 
     # Second user who IS in ADMIN_EMAILS
-    client.post("/auth/magic-link", data={"email": "designated-admin@example.com"})
+    client.post("/auth/magic-link", data={"email": "designated-admin@example.com", "accept_terms": "true"})
     with app.app_context():
         t2 = MagicLinkToken.query.filter_by(email="designated-admin@example.com").first()
         token2 = t2.token
@@ -100,6 +107,7 @@ def test_admin_emails_config_provisioning(client, app):
 
 
 def test_second_user_is_regular_user(client, app):
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = True
     # Create first user
     with app.app_context():
         u1 = User(email="admin@example.com", role="admin")
@@ -107,7 +115,7 @@ def test_second_user_is_regular_user(client, app):
         db.session.commit()
 
     # Request & verify magic link for second user
-    client.post("/auth/magic-link", data={"email": "user2@example.com"})
+    client.post("/auth/magic-link", data={"email": "user2@example.com", "accept_terms": "true"}, environ_base={"REMOTE_ADDR": "127.0.0.99"})
     with app.app_context():
         t = MagicLinkToken.query.filter_by(email="user2@example.com").first()
         token_str = t.token

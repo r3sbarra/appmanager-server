@@ -72,6 +72,10 @@ def request_magic_link():
     if next_url and not is_safe_redirect_url(next_url):
         next_url = ""
 
+    if not request.form.get("accept_terms"):
+        flash("You must agree to the Terms of Use and Privacy Policy to register or sign in.", "warning")
+        return redirect(url_for("auth.login", next=next_url))
+
     if not email or "@" not in email:
         flash("Please enter a valid email address.", "warning")
         return redirect(url_for("auth.login", next=next_url))

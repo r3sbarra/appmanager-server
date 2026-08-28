@@ -50,8 +50,17 @@
                     <label class="form-label" for="email">Email Address</label>
                     <input type="email" id="email" name="email" class="form-input" placeholder="you@example.com" required autofocus>
                 </div>
+                <div class="form-group" style="margin-top:1rem; margin-bottom:1.25rem;">
+                    <label style="font-size:0.85rem; display:flex; align-items:flex-start; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" name="accept_terms" value="true" required style="margin-top:0.2rem;">
+                        <span>I agree to the <a href="/auth/terms" target="_blank" style="color:var(--accent);">Terms of Use</a> and <a href="/auth/privacy" target="_blank" style="color:var(--accent);">Privacy Policy</a></span>
+                    </label>
+                </div>
                 <button type="submit" class="btn btn-primary btn-block btn-lg">Send Magic Login Link &rarr;</button>
             </form>
+            <p style="text-align:center; font-size:0.75rem; color:var(--text-muted); margin-top:1.5rem;">
+                By logging in or registering, you agree to our <a href="/auth/terms" target="_blank" style="color:var(--text-muted); text-decoration:underline;">Terms of Use</a> and <a href="/auth/privacy" target="_blank" style="color:var(--text-muted); text-decoration:underline;">Privacy Policy</a>.
+            </p>
         {% endif %}
     </div>
 </div>
