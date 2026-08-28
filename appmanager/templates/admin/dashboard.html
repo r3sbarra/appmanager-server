@@ -725,6 +725,34 @@
                 </p>
             </div>
 
+            <!-- Slug Conflict Resolution Panel -->
+            <div id="sec-conflict-panel" class="card p-3 mb-0" style="background:var(--surface-2); border:1px solid var(--border); display:none;">
+                <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">⚠️ Slug Already Installed</h4>
+                <p class="text-muted mb-2" style="font-size:0.85rem;">
+                    An app with this slug is already installed. Choose how to proceed.
+                </p>
+                <div id="sec-conflict-versions" class="mb-2" style="font-size:0.85rem;"></div>
+
+                <div class="form-group mb-2">
+                    <label class="form-label">How would you like to proceed?</label>
+                    <div id="sec-conflict-options">
+                        <label class="form-radio" style="display:block; margin-bottom:6px;">
+                            <input type="radio" name="conflict_action" value="update" id="conflict-update">
+                            <span><strong>Update existing</strong> — replace the installed app's files (keeps its permissions &amp; settings)</span>
+                        </label>
+                        <label class="form-radio" style="display:block;">
+                            <input type="radio" name="conflict_action" value="new_slug" id="conflict-new-slug">
+                            <span><strong>Save under a different slug</strong> — install as a new, separate app</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="sec-conflict-new-slug-field" class="form-group mb-0" style="display:none;">
+                    <label class="form-label" for="conflict-new-slug-input">New slug</label>
+                    <input type="text" id="conflict-new-slug-input" class="form-input" placeholder="e.g. my-app-v2" autocomplete="off">
+                </div>
+            </div>
+
             <!-- Permission Request Panel (DB / auth-readonly) -->
             <div id="sec-permissions-panel" class="card p-3 mb-0" style="background:var(--surface-2); border:1px solid var(--border); display:none;">
                 <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">Permission Requests</h4>
@@ -1032,6 +1060,12 @@
     var currentAppSlug = null;
     var currentAppEntry = null;
 
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
     function openSecurityLoading(title, msg) {
         document.getElementById('security-loading-title').textContent = title || 'Security Pre-Check in Progress';
         document.getElementById('security-loading-msg').textContent = msg || 'Staging package & running static AST security audit...';
@@ -1049,6 +1083,50 @@
         currentAppName = data.name;
         currentAppSlug = data.slug;
         currentAppEntry = data.entry_point;
+
+        // ---- Slug conflict resolution panel ----
+        var conflictPanel = document.getElementById('sec-conflict-panel');
+        var conflict = data.slug_conflict || null;
+        if (conflict && conflict.slug_conflict && !isReplacementAction) {
+            conflictPanel.style.display = 'block';
+            var versionsEl = document.getElementById('sec-conflict-versions');
+            var existingV = conflict.existing_version || '—';
+            var newV = conflict.new_version || '—';
+            versionsEl.innerHTML =
+                '<div style="display:flex; gap:16px; flex-wrap:wrap;">' +
+                '<span><strong>Installed:</strong> ' + escapeHtml(conflict.existing_name || data.slug) + ' <span class="badge badge-outline mono">v' + escapeHtml(existingV) + '</span></span>' +
+                '<span><strong>Incoming:</strong> <span class="badge badge-outline mono">v' + escapeHtml(newV) + '</span></span>' +
+                '</div>';
+
+            var updateRadio = document.getElementById('conflict-update');
+            var newSlugRadio = document.getElementById('conflict-new-slug');
+            var newSlugField = document.getElementById('sec-conflict-new-slug-field');
+            var newSlugInput = document.getElementById('conflict-new-slug-input');
+
+            if (conflict.versions_differ) {
+                // Versions differ -> offer update (default) or new slug.
+                updateRadio.disabled = false;
+                updateRadio.checked = true;
+                newSlugRadio.disabled = false;
+                newSlugField.style.display = 'none';
+            } else {
+                // Same version -> only offer a different slug (updating is pointless).
+                updateRadio.disabled = true;
+                updateRadio.checked = false;
+                newSlugRadio.checked = true;
+                newSlugField.style.display = 'block';
+                versionsEl.innerHTML += '<div class="text-muted" style="margin-top:6px; font-size:0.8rem;">Same version — updating would not change anything. Choose a different slug to install as a new app.</div>';
+            }
+
+            function syncConflictSlugField() {
+                newSlugField.style.display = newSlugRadio.checked ? 'block' : 'none';
+            }
+            updateRadio.addEventListener('change', syncConflictSlugField);
+            newSlugRadio.addEventListener('change', syncConflictSlugField);
+            syncConflictSlugField();
+        } else {
+            conflictPanel.style.display = 'none';
+        }
 
         var report = data.report || {};
         var depReport = data.dependency_report || {};
@@ -1277,14 +1355,39 @@
 
             var targetEndpoint = isReplacementAction ? '/admin/apps/confirm-replace-zip' : '/admin/apps/install-confirm';
 
+            // Resolve slug-conflict choice (only for fresh installs, not replacements).
+            var conflictAction = null;
+            var effectiveSlug = currentAppSlug;
+            if (!isReplacementAction) {
+                var conflictPanel = document.getElementById('sec-conflict-panel');
+                if (conflictPanel && conflictPanel.style.display !== 'none') {
+                    var checked = document.querySelector('input[name="conflict_action"]:checked');
+                    if (checked) {
+                        conflictAction = checked.value;
+                        if (conflictAction === 'new_slug') {
+                            var newSlugInput = document.getElementById('conflict-new-slug-input');
+                            var newSlug = (newSlugInput.value || '').trim();
+                            if (!newSlug) {
+                                alert('Please enter a new slug to save under a different slug.');
+                                btn.disabled = false;
+                                btn.textContent = 'Proceed & Install Application';
+                                return;
+                            }
+                            effectiveSlug = newSlug;
+                        }
+                    }
+                }
+            }
+
             fetch(targetEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     staging_id: currentStagingId,
                     name: currentAppName,
-                    slug: currentAppSlug,
+                    slug: effectiveSlug,
                     entry_point: currentAppEntry,
+                    conflict_action: conflictAction,
                     db_access: (document.getElementById('sec-db-decision') || {}).value || 'deny',
                     auth_readonly: (document.getElementById('sec-auth-decision') || {}).value || 'deny'
                 })

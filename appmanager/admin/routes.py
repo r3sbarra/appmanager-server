@@ -22,6 +22,7 @@ from appmanager.admin.app_installer import (
     stage_git_repo,
     stage_zip_file,
     stage_zip_replacement,
+    slug_conflict_info,
     uninstall_app,
     update_app_from_git,
 )
@@ -170,6 +171,7 @@ def precheck_git():
 
         staged_info = get_staged_session(staging_id) or {}
         dep_report = staged_info.get("dependency_report")
+        resolved_slug = manifest.get("slug") or slug or sanitize_slug(name)
         return jsonify(
             {
                 "success": True,
@@ -179,8 +181,9 @@ def precheck_git():
                 "venv_mode": current_app.config.get("APP_VENV_MODE", "singular"),
                 "manifest": manifest,
                 "name": manifest.get("name") or name,
-                "slug": manifest.get("slug") or slug or sanitize_slug(name),
+                "slug": resolved_slug,
                 "entry_point": manifest.get("entry_point") or entry_point or "app:app",
+                "slug_conflict": slug_conflict_info(resolved_slug, manifest),
             }
         )
     except Exception as e:
@@ -215,6 +218,7 @@ def precheck_zip():
 
         staged_info = get_staged_session(staging_id) or {}
         dep_report = staged_info.get("dependency_report")
+        resolved_slug = manifest.get("slug") or slug or sanitize_slug(name)
         return jsonify(
             {
                 "success": True,
@@ -224,8 +228,9 @@ def precheck_zip():
                 "venv_mode": current_app.config.get("APP_VENV_MODE", "singular"),
                 "manifest": manifest,
                 "name": manifest.get("name") or name,
-                "slug": manifest.get("slug") or slug or sanitize_slug(name),
+                "slug": resolved_slug,
                 "entry_point": manifest.get("entry_point") or entry_point or "app:app",
+                "slug_conflict": slug_conflict_info(resolved_slug, manifest),
             }
         )
     except Exception as e:
@@ -251,6 +256,11 @@ def install_confirm():
         or (request.json.get("entry_point") if request.is_json else "")
         or ""
     ).strip() or None
+    conflict_action = (
+        request.form.get("conflict_action")
+        or (request.json.get("conflict_action") if request.is_json else "")
+        or ""
+    ).strip() or None
 
     if not staging_id:
         if request.is_json:
@@ -259,11 +269,13 @@ def install_confirm():
         return redirect(url_for("admin.dashboard"))
 
     try:
+        replace_existing = conflict_action == "update"
         app_record = finalize_staged_installation(
             staging_id=staging_id,
             name=name,
             slug=slug,
             entry_point=entry_point,
+            replace_existing=replace_existing,
         )
 
         # Apply admin's DB / auth-readonly permission decisions (if any).
@@ -303,16 +315,18 @@ def install_confirm():
             logger.warning("Failed to apply permission decisions for '%s': %s", app_record.slug, e)
 
         if request.is_json:
+            verb = "updated" if replace_existing else "installed"
             return jsonify(
                 {
                     "success": True,
                     "app_id": app_record.id,
                     "name": app_record.name,
                     "slug": app_record.slug,
-                    "message": f"Application '{app_record.name}' installed successfully!",
+                    "message": f"Application '{app_record.name}' {verb} successfully!",
                 }
             )
-        flash(f"Application '{app_record.name}' installed successfully!", "success")
+        verb = "updated" if replace_existing else "installed"
+        flash(f"Application '{app_record.name}' {verb} successfully!", "success")
     except Exception as e:
         if request.is_json:
             return jsonify({"success": False, "error": str(e)}), 400

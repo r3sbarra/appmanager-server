@@ -194,6 +194,124 @@ def test_install_confirm_duplicate_slug_fails(auth_client, app):
     assert "already installed" in res_json2["error"]
 
 
+def _create_zip_with_version(version):
+    bio = io.BytesIO()
+    with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "name": "Existing App",
+                    "slug": "existing-app",
+                    "version": version,
+                    "entry_point": "app:app",
+                }
+            ),
+        )
+        zf.writestr("app.py", "from flask import Flask\napp = Flask(__name__)\n")
+    bio.seek(0)
+    return bio
+
+
+def test_precheck_reports_slug_conflict_with_versions(auth_client, app):
+    # Install v1 first.
+    resp1 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("1.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    assert resp1.status_code == 200
+    staging_id_1 = resp1.get_json()["staging_id"]
+    assert resp1.get_json()["slug_conflict"] is None
+    assert auth_client.post(
+        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+    ).get_json()["success"] is True
+
+    # Precheck v2 with the same slug -> conflict reported with version diff.
+    resp2 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("2.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    assert resp2.status_code == 200
+    conflict = resp2.get_json()["slug_conflict"]
+    assert conflict is not None
+    assert conflict["slug_conflict"] is True
+    assert conflict["existing_version"] == "1.0.0"
+    assert conflict["new_version"] == "2.0.0"
+    assert conflict["versions_differ"] is True
+
+
+def test_install_confirm_update_replaces_existing_app(auth_client, app):
+    # Install v1.
+    resp1 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("1.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    staging_id_1 = resp1.get_json()["staging_id"]
+    assert auth_client.post(
+        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+    ).get_json()["success"] is True
+
+    # Precheck v2 and confirm with conflict_action=update -> replaces, same slug.
+    resp2 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("2.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    staging_id_2 = resp2.get_json()["staging_id"]
+    confirm2 = auth_client.post(
+        "/admin/apps/install-confirm",
+        json={"staging_id": staging_id_2, "slug": "existing-app", "conflict_action": "update"},
+    )
+    assert confirm2.status_code == 200
+    res2 = confirm2.get_json()
+    assert res2["success"] is True
+    assert res2["slug"] == "existing-app"
+
+    # Only one app record remains (updated, not duplicated).
+    from appmanager.models import InstalledApp
+
+    with app.app_context():
+        apps = InstalledApp.query.filter_by(slug="existing-app").all()
+        assert len(apps) == 1
+
+
+def test_install_confirm_new_slug_installs_separate_app(auth_client, app):
+    # Install v1 under existing-app.
+    resp1 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("1.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    staging_id_1 = resp1.get_json()["staging_id"]
+    assert auth_client.post(
+        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+    ).get_json()["success"] is True
+
+    # Precheck again, confirm with a different slug -> installs as a new app.
+    resp2 = auth_client.post(
+        "/admin/apps/precheck-zip",
+        data={"zip_file": (_create_zip_with_version("2.0.0"), "app.zip"), "name": "Existing App"},
+        content_type="multipart/form-data",
+    )
+    staging_id_2 = resp2.get_json()["staging_id"]
+    confirm2 = auth_client.post(
+        "/admin/apps/install-confirm",
+        json={"staging_id": staging_id_2, "slug": "existing-app-v2", "conflict_action": "new_slug"},
+    )
+    assert confirm2.status_code == 200
+    assert confirm2.get_json()["success"] is True
+    assert confirm2.get_json()["slug"] == "existing-app-v2"
+
+    from appmanager.models import InstalledApp
+
+    with app.app_context():
+        assert len(InstalledApp.query.filter_by(slug="existing-app").all()) == 1
+        assert len(InstalledApp.query.filter_by(slug="existing-app-v2").all()) == 1
+
+
 def test_cli_install_corrupt_zip_fails(app, tmp_path):
     corrupt_file = tmp_path / "bad.zip"
     corrupt_file.write_text("Not a zip file")

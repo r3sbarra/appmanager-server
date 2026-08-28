@@ -596,15 +596,51 @@ def stage_zip_file(
     return staging_id, scan_report, manifest
 
 
+def slug_conflict_info(slug: str, new_manifest: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """
+    If an app with ``slug`` is already installed, returns a dict describing the
+    conflict (existing app id/name/version vs the incoming manifest's version).
+    Returns None when there is no conflict.
+    """
+    if not slug:
+        return None
+    existing = InstalledApp.query.filter_by(slug=slug).first()
+    if not existing:
+        return None
+
+    existing_version = None
+    try:
+        from appmanager.admin.registry import manifest_for
+
+        existing_version = (manifest_for(existing) or {}).get("version")
+    except Exception:
+        pass
+
+    new_version = (new_manifest or {}).get("version")
+    return {
+        "slug_conflict": True,
+        "existing_app_id": existing.id,
+        "existing_name": existing.name,
+        "existing_version": existing_version,
+        "new_version": new_version,
+        "versions_differ": (existing_version or "") != (new_version or ""),
+    }
+
+
 def finalize_staged_installation(
     staging_id: str,
     name: Optional[str] = None,
     slug: Optional[str] = None,
     entry_point: Optional[str] = None,
+    replace_existing: bool = False,
 ) -> InstalledApp:
     """
     Finalizes installation of a staged application: moves files into INSTALLED_APPS_DIR,
     installs requirements, registers in database, configures settings and permissions.
+
+    If ``replace_existing`` is True and an app with the target slug is already installed,
+    its files are atomically replaced (preserving the app record, permissions, and settings)
+    instead of raising a conflict error.
     """
     session = get_staged_session(staging_id)
     if not session:
@@ -622,10 +658,49 @@ def finalize_staged_installation(
     target_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], final_slug)
     logger.info("Finalizing installation of staged app '%s' into '%s'", final_slug, target_dir)
 
-    if os.path.exists(target_dir):
-        if os.path.exists(staging_dir):
-            shutil.rmtree(staging_dir, ignore_errors=True)
-        raise ValueError(f"An app with slug '{final_slug}' is already installed.")
+    existing_app = InstalledApp.query.filter_by(slug=final_slug).first()
+    if os.path.exists(target_dir) or existing_app:
+        if not replace_existing:
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            raise ValueError(f"An app with slug '{final_slug}' is already installed.")
+
+        # ---- Replace existing app's files atomically (preserve record/permissions) ----
+        if not existing_app:
+            raise ValueError(
+                f"App directory for slug '{final_slug}' exists but no matching app record was found."
+            )
+        _replace_staged_files(staging_dir, target_dir)
+
+        # Refresh manifest-derived metadata on the existing record.
+        manifest = parse_manifest(target_dir) or session.get("manifest") or {}
+        if manifest.get("name"):
+            existing_app.name = manifest["name"]
+        if manifest.get("description"):
+            existing_app.description = manifest["description"]
+        if manifest.get("entry_point"):
+            existing_app.entry_point = manifest["entry_point"]
+        db.session.commit()
+
+        # Clear WSGI cache and trigger reload signals.
+        if hasattr(current_app, "extensions") and "appmanager" in current_app.extensions:
+            current_app.extensions["appmanager"].clear_cache(slug=existing_app.slug)
+        try:
+            subapp_reloaded.send(None, slug=existing_app.slug)
+            subapp_updated.send(
+                None, app_slug=existing_app.slug, app_id=existing_app.id, update_type="install"
+            )
+        except Exception:
+            pass
+        try:
+            from appmanager.hooks import trigger_hook
+
+            trigger_hook(
+                "on_app_updated", app_id=existing_app.id, app_slug=existing_app.slug, update_type="install"
+            )
+        except Exception:
+            pass
+        return existing_app
 
     # Remove staging metadata file before moving into installed_apps
     meta_path = os.path.join(staging_dir, "_staging_meta.json")
@@ -943,6 +1018,46 @@ def update_app_from_git(app_id_or_slug: Any) -> Tuple[bool, str, Dict[str, Any]]
             "manifest": manifest,
         },
     )
+
+
+def _replace_staged_files(staging_dir: str, target_dir: str) -> None:
+    """
+    Atomically replaces the contents of ``target_dir`` with the staged files in
+    ``staging_dir``. On failure, restores the original target contents.
+    """
+    import tempfile
+
+    temp_backup_dir = None
+    try:
+        if os.path.exists(target_dir):
+            temp_backup_dir = tempfile.mkdtemp(prefix="app_backup_")
+            for item in os.listdir(target_dir):
+                shutil.move(os.path.join(target_dir, item), os.path.join(temp_backup_dir, item))
+
+        # Remove staging metadata before moving files in.
+        meta_path = os.path.join(staging_dir, "_staging_meta.json")
+        if os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+            except Exception:
+                pass
+
+        os.makedirs(target_dir, exist_ok=True)
+        for item in os.listdir(staging_dir):
+            shutil.move(os.path.join(staging_dir, item), os.path.join(target_dir, item))
+
+        if os.path.exists(staging_dir):
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        if temp_backup_dir and os.path.exists(temp_backup_dir):
+            shutil.rmtree(temp_backup_dir, ignore_errors=True)
+    except Exception as e:
+        if temp_backup_dir and os.path.exists(temp_backup_dir) and os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+            os.makedirs(target_dir, exist_ok=True)
+            for item in os.listdir(temp_backup_dir):
+                shutil.move(os.path.join(temp_backup_dir, item), os.path.join(target_dir, item))
+            shutil.rmtree(temp_backup_dir, ignore_errors=True)
+        raise RuntimeError(f"Failed to replace application files: {e}")
 
 
 def stage_zip_replacement(
