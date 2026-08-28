@@ -99,3 +99,60 @@ def migrate_from_settings_json(app_id=None):
         migrated += 1
     db.session.commit()
     return migrated
+
+
+# ---------------------------------------------------------------------------
+# Per-app API key
+# ---------------------------------------------------------------------------
+
+APP_API_KEY_CONFIG = "app_api_key"
+
+
+def generate_app_api_key(app_id: int) -> str:
+    """
+    Generate and store a per-app API key (stored as a secret config row).
+    Returns the plaintext key once; the caller is responsible for handing it to
+    the app securely (e.g. via the SDK bridge).
+    """
+    import secrets
+
+    key = "amk_" + secrets.token_urlsafe(32)
+    set_config(app_id, APP_API_KEY_CONFIG, key, value_type="string", is_secret=True)
+    return key
+
+
+def get_app_api_key(app_id: int) -> str:
+    """Return the stored per-app API key, or '' if none exists."""
+    return get_config(app_id, APP_API_KEY_CONFIG, "") or ""
+
+
+def rotate_app_api_key(app_id: int) -> str:
+    """Rotate (regenerate) the per-app API key. Returns the new plaintext key."""
+    new_key = generate_app_api_key(app_id)
+    try:
+        from appmanager.audit import log_action
+
+        log_action(
+            "app_api_key_rotate",
+            actor_type="admin",
+            app_id=app_id,
+            details={"rotated": True},
+        )
+    except Exception:
+        pass
+    return new_key
+
+
+def validate_app_api_key(app_id: int, candidate: str) -> bool:
+    """
+    Constant-time compare of a candidate key against the app's stored key.
+    Returns False when no key is stored or the candidate is empty.
+    """
+    import hmac
+
+    if not candidate:
+        return False
+    stored = get_app_api_key(app_id)
+    if not stored:
+        return False
+    return hmac.compare_digest(stored, candidate)

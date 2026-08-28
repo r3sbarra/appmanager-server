@@ -692,6 +692,36 @@ def finalize_staged_installation(
     db.session.add(installed_app)
     db.session.commit()
 
+    # Create default (denied) permission rows for DB / auth-readonly requests.
+    try:
+        from appmanager.db_access import ensure_permission_rows
+
+        ensure_permission_rows(installed_app, manifest)
+    except Exception as e:
+        logger.warning("Failed to seed permission rows for '%s': %s", final_slug, e)
+
+    # Generate a per-app API key (stored as a secret config row).
+    try:
+        from appmanager.app_config import generate_app_api_key
+
+        generate_app_api_key(installed_app.id)
+    except Exception as e:
+        logger.warning("Failed to generate API key for '%s': %s", final_slug, e)
+
+    # Record the install in the audit log.
+    try:
+        from appmanager.audit import log_action
+
+        log_action(
+            "app_install",
+            actor_type="admin",
+            actor_id=getattr(installed_app, "installed_by", None),
+            app_id=installed_app.id,
+            details={"slug": final_slug, "source_type": session.get("source_type")},
+        )
+    except Exception:
+        pass
+
     users = User.query.all()
     for u in users:
         perm = UserAppPermission(user_id=u.id, app_id=installed_app.id, can_access=True)
@@ -1061,6 +1091,27 @@ def uninstall_app(app_id: int) -> Tuple[bool, str]:
     # Invalidate cached WSGI instance if present in extension
     if hasattr(current_app, "extensions") and "appmanager" in current_app.extensions:
         current_app.extensions["appmanager"].clear_cache(slug=slug)
+
+    # Clean up DB permissions and any scoped tables created for this app.
+    try:
+        from appmanager.db_access import cleanup_app_data
+
+        cleanup_app_data(app_record.id, slug)
+    except Exception as e:
+        logger.warning("Failed to clean up DB data for '%s': %s", slug, e)
+
+    # Record the uninstall in the audit log.
+    try:
+        from appmanager.audit import log_action
+
+        log_action(
+            "app_uninstall",
+            actor_type="admin",
+            app_id=app_id,
+            details={"slug": slug, "name": app_record.name},
+        )
+    except Exception:
+        pass
 
     db.session.delete(app_record)
     db.session.commit()

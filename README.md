@@ -59,6 +59,11 @@ graph LR
 - 🩺 **Automated Health Monitoring**: Sub-app health evaluation contract (`/health` endpoint or `get_health()` callable) tracked in `AppHealthLog` with one-click admin execution.
 - 📊 **In-Process Telemetry Bridge**: High-performance telemetry reporting allowing sub-apps to record events and metrics directly to the host database with zero network overhead.
 - 🔒 **Granular Role & Permissions Matrix**: Full RBAC role management and per-user permission matrix controlling access to every installed sub-app.
+- 🗄️ **Per-App Database Access**: Apps can request scoped or full access to the host database; the admin approves/denies at install and can adjust later (with optional data migration).
+- 🔐 **Read-Only Auth Access**: Apps can request a narrow read-only auth subset (login state, display name, role) — never email, id, or tokens.
+- 🔑 **Per-App API Keys**: Each installed app gets a generated API key for service-to-service auth back to the host REST API.
+- 📜 **Audit Log**: Append-only trail of install/uninstall, permission grants/revokes, config changes, and API key rotation.
+- 🚦 **Bridge Rate Limiting**: Token-bucket rate limiting on in-process telemetry/storage calls to stop one app from flooding the host.
 
 ---
 
@@ -197,6 +202,80 @@ def health():
 if __name__ == "__main__":
     app.run(port=5001, debug=True)
 ```
+
+---
+
+## 🗄️ Per-App Database Access & Permissions
+
+An app can request access to the host's shared database by declaring it in its
+manifest. On install, the admin approves or denies the request (default is
+**deny**). Permissions are stored in the `app_db_permissions` table and can be
+adjusted after install from the app's **Permissions** panel.
+
+### Manifest fields
+
+```json
+{
+  "requests_database": true,
+  "database_access_level": "scoped",
+  "database_description": "Stores user preferences in a scoped table.",
+  "requests_auth_readonly": true
+}
+```
+
+- `requests_database` — request shared DB access.
+- `database_access_level` — `"scoped"` (own table prefix / MySQL schema) or
+  `"full"` (raw host DB, trusted only).
+- `database_description` — shown to the admin at approval time.
+- `requests_auth_readonly` — request read-only access to login state, display
+  name, and role only.
+
+### Approval flow
+
+1. The install security report shows a **Permission Requests** panel.
+2. The admin chooses **Deny**, **Scoped**, or **Full** for DB access, and
+   **Deny**/**Grant** for read-only auth access.
+3. The decision is stored; the app's SDK receives an in-process engine (never
+   raw credentials) when granted, or falls back to its own local SQLite when
+   denied.
+
+### Adjusting permissions after install
+
+From the app's **Permissions** panel, the admin can change the DB scope or
+revoke auth access at any time. If the DB scope changes, the admin is asked
+whether to **migrate** the app's existing data (migration is a distinct,
+confirmable action — never automatic).
+
+### Security model
+
+- **Scoped** access hands the app a SQLAlchemy engine with its own table prefix
+  (`app_<slug>_`) or dedicated MySQL schema.
+- **Full** access hands a raw engine to the host DB and shows a prominent
+  warning at approval.
+- **Auth read-only** exposes only login state, display name, and role — never
+  email, user id, passwords, or tokens.
+- Credentials never exist as strings in app memory and are never sent over the
+  network or written to files.
+
+### Per-app API keys
+
+Each installed app gets a generated API key (stored as a secret config row).
+The SDK sends it in `X-AppManager-App-Key` to authenticate service-to-service
+calls back to the host REST API. The key is injected by the dispatcher, so the
+app never stores or manages credentials itself.
+
+### Audit log
+
+Security-relevant actions (install/uninstall, permission grants/revokes, API
+key rotation) are recorded in the `audit_log` table and viewable at
+`/admin/audit-log`.
+
+### Bridge rate limiting
+
+In-process telemetry/storage calls (`report_event`, `report_metric`) are
+rate-limited per app via a token bucket (default 100 events/min, configurable
+via `BRIDGE_RATE_LIMIT_RATE` / `BRIDGE_RATE_LIMIT_BURST` /
+`BRIDGE_RATE_LIMIT_ENABLED`).
 
 ---
 

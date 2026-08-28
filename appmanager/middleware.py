@@ -208,6 +208,18 @@ class DynamicAppDispatcherMiddleware:
                     environ["HTTP_X_APPMANAGER_SUBAPP_SLUG"] = slug
                     environ["HTTP_X_FORWARDED_PREFIX"] = f"/apps/{slug}"
 
+                    # 3. Inject the app's stored per-app API key so the sub-app can
+                    #    authenticate to the host REST API without holding credentials
+                    #    itself. (Validation happens in the host API decorator.)
+                    try:
+                        from appmanager.app_config import get_app_api_key
+
+                        stored_key = get_app_api_key(app_record.id)
+                        if stored_key:
+                            environ["HTTP_X_APPMANAGER_APP_KEY"] = stored_key
+                    except Exception as e:
+                        logger.warning("App key injection failed for '%s': %s", slug, e)
+
                     logger.debug(
                         "Dispatching request '%s %s' to sub-app '%s' (user: %s)",
                         environ.get("REQUEST_METHOD", "GET"),

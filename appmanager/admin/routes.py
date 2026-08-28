@@ -1,4 +1,5 @@
 import os
+import logging
 
 from flask import (
     Blueprint,
@@ -39,6 +40,7 @@ from appmanager.health import check_all_apps_health
 from appmanager.models import AppHealthLog, InstalledApp, Role, User, UserAppPermission
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+logger = logging.getLogger("appmanager.admin.routes")
 
 
 @admin_bp.route("/")
@@ -263,6 +265,43 @@ def install_confirm():
             slug=slug,
             entry_point=entry_point,
         )
+
+        # Apply admin's DB / auth-readonly permission decisions (if any).
+        try:
+            from appmanager.db_access import grant_permission, revoke_permission
+
+            admin_user_id = None
+            try:
+                from flask_login import current_user
+
+                admin_user_id = getattr(current_user, "id", None)
+            except Exception:
+                pass
+            admin_user_id = admin_user_id or 0
+
+            db_decision = (
+                request.form.get("db_access")
+                or (request.json.get("db_access") if request.is_json else "")
+                or "deny"
+            ).strip()
+            auth_decision = (
+                request.form.get("auth_readonly")
+                or (request.json.get("auth_readonly") if request.is_json else "")
+                or "deny"
+            ).strip()
+
+            if db_decision in ("scoped", "full"):
+                grant_permission(app_record.id, "db", db_decision, admin_user_id)
+            else:
+                revoke_permission(app_record.id, "db", admin_user_id)
+
+            if auth_decision == "grant":
+                grant_permission(app_record.id, "auth_readonly", "readonly", admin_user_id)
+            else:
+                revoke_permission(app_record.id, "auth_readonly", admin_user_id)
+        except Exception as e:
+            logger.warning("Failed to apply permission decisions for '%s': %s", app_record.slug, e)
+
         if request.is_json:
             return jsonify(
                 {
@@ -617,6 +656,11 @@ def app_detail(slug):
     venv_mode = current_app.config.get("APP_VENV_MODE", "singular")
     dep_report = analyze_dependencies(app_dir, manifest=manifest, venv_mode=venv_mode)
 
+    # Load the app's DB / auth-readonly permissions for the permissions panel.
+    from appmanager.models import AppDbPermission
+
+    permissions = AppDbPermission.query.filter_by(app_id=app_record.id).all()
+
     return render_template(
         "admin/app_detail.html",
         user=user,
@@ -627,6 +671,114 @@ def app_detail(slug):
         configs=configs,
         manifest=manifest,
         dep_report=dep_report,
+        permissions=permissions,
+    )
+
+
+@admin_bp.route("/apps/<slug>/permissions", methods=["POST"])
+@admin_required
+def update_app_permissions(slug):
+    """
+    Adjust an app's DB / auth-readonly permissions after install.
+
+    If the DB scope changes, the admin may request a data migration (the UI
+    asks whether to migrate; if yes, we run the migration).
+    """
+    from appmanager.db_access import (
+        grant_permission,
+        migrate_app_data,
+        revoke_permission,
+    )
+    from appmanager.models import AppDbPermission
+
+    app_record = InstalledApp.query.filter_by(slug=slug).first()
+    if not app_record:
+        flash("App not found.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    admin_user_id = getattr(get_current_user(), "id", 0) or 0
+
+    # DB permission decision.
+    db_decision = (request.form.get("db_access") or "deny").strip()
+    old_db_perm = AppDbPermission.query.filter_by(
+        app_id=app_record.id, permission_type="db"
+    ).first()
+    old_level = old_db_perm.access_level if old_db_perm else "denied"
+
+    if db_decision in ("scoped", "full"):
+        grant_permission(app_record.id, "db", db_decision, admin_user_id)
+        # If the scope changed and the admin opted to migrate, run the migration.
+        if old_level in ("scoped", "full") and old_level != db_decision:
+            if request.form.get("migrate_db") == "1":
+                migrate_app_data(app_record.id, old_level, db_decision)
+                flash(
+                    f"DB access for '{app_record.name}' changed to {db_decision} and data migrated.",
+                    "success",
+                )
+            else:
+                flash(
+                    f"DB access for '{app_record.name}' changed to {db_decision} (no migration).",
+                    "success",
+                )
+        else:
+            flash(f"DB access for '{app_record.name}' set to {db_decision}.", "success")
+    else:
+        revoke_permission(app_record.id, "db", admin_user_id)
+        flash(f"DB access revoked for '{app_record.name}'.", "info")
+
+    # Auth read-only permission decision.
+    auth_decision = (request.form.get("auth_readonly") or "deny").strip()
+    if auth_decision == "grant":
+        grant_permission(app_record.id, "auth_readonly", "readonly", admin_user_id)
+        flash(f"Read-only auth access granted for '{app_record.name}'.", "success")
+    else:
+        revoke_permission(app_record.id, "auth_readonly", admin_user_id)
+        flash(f"Read-only auth access revoked for '{app_record.name}'.", "info")
+
+    return redirect(url_for("admin.app_detail", slug=slug))
+
+
+@admin_bp.route("/apps/<slug>/permissions/revoke", methods=["POST"])
+@admin_required
+def revoke_app_permission(slug):
+    """Revoke a specific permission type for an app."""
+    from appmanager.db_access import revoke_permission
+
+    app_record = InstalledApp.query.filter_by(slug=slug).first()
+    if not app_record:
+        flash("App not found.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    permission_type = (request.form.get("permission_type") or "db").strip()
+    admin_user_id = getattr(get_current_user(), "id", 0) or 0
+    revoke_permission(app_record.id, permission_type, admin_user_id)
+    flash(f"Permission '{permission_type}' revoked for '{app_record.name}'.", "info")
+    return redirect(url_for("admin.app_detail", slug=slug))
+
+
+@admin_bp.route("/audit-log")
+@admin_required
+def audit_log_view():
+    """Filterable admin view of the audit log."""
+    from appmanager.audit import query_audit
+
+    app_id = request.args.get("app_id", type=int)
+    action = request.args.get("action") or None
+    actor_type = request.args.get("actor_type") or None
+    limit = min(request.args.get("limit", 100, type=int), 500)
+
+    entries = query_audit(
+        app_id=app_id, action=action, actor_type=actor_type, limit=limit
+    )
+    apps = InstalledApp.query.order_by(InstalledApp.name).all()
+    return render_template(
+        "admin/audit_log.html",
+        user=get_current_user(),
+        entries=entries,
+        apps=apps,
+        filter_app_id=app_id,
+        filter_action=action,
+        filter_actor_type=actor_type,
     )
 
 

@@ -13,7 +13,8 @@ from appmanager.models import AppHealthLog, AppTelemetryLog, InstalledApp, Role,
 
 def api_auth_required(f):
     """
-    Decorator requiring valid API key (X-API-Key) or Bearer Admin JWT for API endpoints.
+    Decorator requiring valid API key (X-API-Key), Bearer Admin JWT, or a valid
+    per-app API key (X-AppManager-App-Key) for API endpoints.
     """
 
     @wraps(f)
@@ -39,6 +40,17 @@ def api_auth_required(f):
                 if user and user.is_active and user.is_admin():
                     return f(*args, **kwargs)
 
+        # 3. Check per-app API key (service-to-service auth for sub-apps)
+        app_key = request.headers.get("X-AppManager-App-Key")
+        app_slug = request.headers.get("X-AppManager-SubApp-Slug")
+        if app_key and app_slug:
+            from appmanager.app_config import validate_app_api_key
+            from appmanager.models import InstalledApp
+
+            app_record = InstalledApp.query.filter_by(slug=app_slug, is_active=True).first()
+            if app_record and validate_app_api_key(app_record.id, app_key):
+                return f(*args, **kwargs)
+
         # If no API key is set in config and no auth header, in dev/testing check if admin logged in
         if not configured_api_key:
             # Check cookie or JWT
@@ -54,7 +66,7 @@ def api_auth_required(f):
             {
                 "success": False,
                 "error": "Unauthorized",
-                "message": "Valid X-API-Key or Admin Bearer Token is required.",
+                "message": "Valid X-API-Key, Admin Bearer Token, or per-app API key is required.",
             }
         ), 401
 

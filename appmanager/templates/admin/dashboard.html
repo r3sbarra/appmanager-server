@@ -41,11 +41,20 @@
 <div class="admin-layout">
     <!-- Sidebar nav -->
     <aside class="admin-sidebar">
+        <div class="admin-nav-group-title">PORTAL MANAGEMENT</div>
         <nav class="admin-nav">
-            <a href="#apps" class="active" data-tab="apps"><span class="nav-icon">▸</span> Applications</a>
-            <a href="#users" data-tab="users"><span class="nav-icon">▸</span> Members</a>
-            <a href="#access" data-tab="access"><span class="nav-icon">▸</span> Access Management</a>
+            <a href="#apps" class="active" data-tab="apps"><span class="nav-icon">📦</span> Applications</a>
+            <a href="#users" data-tab="users"><span class="nav-icon">👥</span> Members</a>
         </nav>
+        <div class="admin-nav-group">
+            <div class="admin-nav-group-title">ACCESS MANAGEMENT</div>
+            <nav class="admin-nav">
+                <a href="#access-roles" data-tab="access" data-subtab="roles"><span class="nav-icon">🛡️</span> Roles &amp; Governance</a>
+                <a href="#access-flairs" data-tab="access" data-subtab="flairs"><span class="nav-icon">✨</span> Member Flairs</a>
+                <a href="#access-matrix" data-tab="access" data-subtab="matrix"><span class="nav-icon">🔒</span> Permissions Matrix</a>
+                <a href="/admin/audit-log"><span class="nav-icon">📜</span> Audit Log</a>
+            </nav>
+        </div>
     </aside>
 
     <!-- Content -->
@@ -199,6 +208,8 @@
                                                 <a href="/admin/apps/{{ app.slug }}" class="btn btn-ghost btn-sm icon-btn" title="Configure App Settings &amp; Dependencies">⚙</a>
                                                 {% if app.has_web_ui %}
                                                     <a href="/apps/{{ app.slug }}/" class="btn btn-primary btn-sm">Launch</a>
+                                                {% else %}
+                                                    <span class="btn btn-primary btn-sm btn-placeholder" style="visibility: hidden; pointer-events: none;" aria-hidden="true">Launch</span>
                                                 {% endif %}
                                                 <form class="inline-form" action="/admin/apps/{{ app.id }}/set-default" method="POST">
                                                     {% if app.is_default %}
@@ -280,190 +291,360 @@
 
         <!-- ============ ACCESS MANAGEMENT TAB ============ -->
         <section class="tab-panel" id="panel-access">
-            <!-- Roles -->
-            <div class="grid grid-2 mb-4">
-                <div class="card">
-                    <h2 class="card-title mb-3">Create New Role</h2>
-                    <form action="/admin/roles/create" method="POST">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="form-group">
-                            <label class="form-label">Role Display Name</label>
-                            <input type="text" name="name" class="form-input" placeholder="e.g. Content Editor" required>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Role Slug (identifier)</label>
-                            <input type="text" name="slug" class="form-input" placeholder="e.g. content-editor">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Description</label>
-                            <textarea name="description" class="form-textarea" style="height:80px;" placeholder="Describe what responsibilities or access this role grants..."></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-block">Create Custom Role</button>
-                    </form>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title mb-0">Configured Roles</h2>
-                        <span class="badge badge-primary">{{ roles|length }}</span>
-                    </div>
-                    <div class="table-wrap">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Role</th>
-                                    <th>Slug</th>
-                                    <th>Type</th>
-                                    <th class="num">Members</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for r in roles %}
-                                <tr>
-                                    <td><strong>{{ r.name }}</strong></td>
-                                    <td><code>{{ r.slug }}</code></td>
-                                    <td>
-                                        {% if r.is_system %}
-                                            <span class="badge badge-accent">System</span>
-                                        {% else %}
-                                            <span class="badge badge-primary">Custom</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="num">{{ role_counts.get(r.slug, 0) }}</td>
-                                    <td>
-                                        {% if not r.is_system %}
-                                            <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('/admin/roles/{{ r.id }}/delete', '{{ r.slug }}', 'Delete role {{ r.name }}?', 'Type <code>{{ r.slug }}</code> to confirm')">Delete</button>
-                                        {% else %}
-                                            <span class="text-faint" style="font-size:0.75rem;">Protected</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <!-- Access Management Sub-Navigation -->
+            <div class="admin-subnav mb-4">
+                <button type="button" class="admin-subnav-btn active" data-subtab="roles">
+                    <span class="nav-icon">🛡️</span> Roles &amp; Governance
+                </button>
+                <button type="button" class="admin-subnav-btn" data-subtab="flairs">
+                    <span class="nav-icon">✨</span> Member Flairs &amp; Badges
+                </button>
+                <button type="button" class="admin-subnav-btn" data-subtab="matrix">
+                    <span class="nav-icon">🔒</span> Permissions Matrix
+                </button>
             </div>
 
-            <!-- Flairs -->
-            <div class="grid grid-2 mb-4">
-                <div class="card">
-                    <h2 class="card-title mb-2" style="color: var(--accent);">Preset Flair Badges</h2>
-                    <p class="text-muted mb-2" style="font-size:0.85rem;">Click any preset flair to quickly apply it in the member assignment table.</p>
-                    <div class="flex" style="flex-direction:column; gap:0.6rem;">
-                        {% for preset in presets %}
-                            <div class="flex-between" style="background: var(--bg-elevated); padding:0.6rem 0.8rem; border-radius:var(--radius); border:1px solid var(--border);">
-                                <span class="badge" style="color: {{ preset.color }}; border-color: {{ preset.color }}66;">{{ preset.title }}</span>
-                                <span class="text-muted mono" style="font-size:0.72rem;">{{ preset.color }}</span>
+            <!-- Sub-panel 1: Roles & Governance -->
+            <div class="sub-tab-panel active" id="subpanel-roles">
+                <div class="grid grid-2 mb-4">
+                    <div class="card">
+                        <h2 class="card-title mb-3">Create New Role</h2>
+                        <form action="/admin/roles/create" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="form-group">
+                                <label class="form-label">Role Display Name</label>
+                                <input type="text" name="name" class="form-input" placeholder="e.g. Content Editor" required>
                             </div>
-                        {% endfor %}
+                            <div class="form-group">
+                                <label class="form-label">Role Slug (identifier)</label>
+                                <input type="text" name="slug" class="form-input" placeholder="e.g. content-editor">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Description</label>
+                                <textarea name="description" class="form-textarea" style="height:80px;" placeholder="Describe what responsibilities or access this role grants..."></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-block">Create Custom Role</button>
+                        </form>
                     </div>
-                </div>
 
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="card-title mb-0">Member Flair Assignments</h2>
-                        <span class="badge badge-primary">{{ users|length }}</span>
-                    </div>
-                    <div class="table-wrap">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Member</th>
-                                    <th>Current Flair</th>
-                                    <th>Assign / Update</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for u in users %}
-                                {% set f = user_flairs.get(u.id) %}
-                                <tr>
-                                    <td>
-                                        <strong>{{ u.name or u.email }}</strong>
-                                        <div class="text-muted" style="font-size:0.75rem;">{{ u.email }}</div>
-                                    </td>
-                                    <td>
-                                        {% if f and f.title %}
-                                            <span class="badge" style="color: {{ f.color }}; border-color: {{ f.color }}66;">{{ f.title }}</span>
-                                        {% else %}
-                                            <span class="text-faint" style="font-size:0.75rem;">No Flair</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <form action="/admin/flairs" method="POST" class="flex gap-1" style="align-items:center;">
-                                            <input type="hidden" name="user_id" value="{{ u.id }}">
-                                            <input type="text" name="flair_title" placeholder="Flair title..." value="{{ f.title if f else '' }}" class="form-input" style="width:130px; padding:0.3rem; font-size:0.8rem;">
-                                            <input type="color" name="flair_color" value="{{ f.color if f else '#F5A524' }}" style="height:28px; width:32px; padding:0; border:none; background:none; cursor:pointer;">
-                                            <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
-                                            {% if f and f.title %}
-                                                <button type="submit" name="action" value="clear" class="btn btn-secondary btn-sm" title="Clear Flair">✕</button>
-                                            {% endif %}
-                                        </form>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Permissions matrix -->
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title mb-0">App Access Permissions Matrix</h2>
-                    <span class="badge badge-primary">{{ users|length }} × {{ apps|length }}</span>
-                </div>
-                {% if users and apps %}
-                    <form action="/admin/permissions" method="POST">
-                        <div class="table-wrap mb-3">
-                            <table class="table" style="text-align:center;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title mb-0">Configured Roles</h2>
+                            <span class="badge badge-primary">{{ roles|length }}</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="table">
                                 <thead>
                                     <tr>
-                                        <th style="text-align:left;">User / Email</th>
-                                        <th style="text-align:left;">Role</th>
-                                        {% for app in apps %}
-                                            <th>
-                                                <div>{{ app.name }}</div>
-                                                <div class="text-muted" style="font-size:0.7rem; font-weight:normal;">/apps/{{ app.slug }}</div>
-                                            </th>
-                                        {% endfor %}
+                                        <th>Role</th>
+                                        <th>Slug</th>
+                                        <th>Type</th>
+                                        <th class="num">Members</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {% for u in users %}
-                                        <tr>
-                                            <td style="text-align:left;">
-                                                <strong>{{ u.name or u.email }}</strong><br>
-                                                <span class="text-muted" style="font-size:0.78rem;">{{ u.email }}</span>
-                                            </td>
-                                            <td style="text-align:left;">
-                                                <span class="badge badge-primary">{{ u.role }}</span>
-                                            </td>
-                                            {% for app in apps %}
-                                                {% set is_checked = perms_map.get((u.id, app.id), True) %}
-                                                <td>
-                                                    {% if u.is_admin() %}
-                                                        <span class="text-success" style="font-size:0.8rem;">Full</span>
-                                                    {% else %}
-                                                        <input type="checkbox" name="perm_{{ u.id }}_{{ app.id }}" value="1" class="checkbox-cell" {% if is_checked %}checked{% endif %} style="transform:scale(1.2); cursor:pointer;">
-                                                    {% endif %}
-                                                </td>
-                                            {% endfor %}
-                                        </tr>
+                                    {% for r in roles %}
+                                    <tr>
+                                        <td><strong>{{ r.name }}</strong></td>
+                                        <td><code>{{ r.slug }}</code></td>
+                                        <td>
+                                            {% if r.is_system %}
+                                                <span class="badge badge-accent">System</span>
+                                            {% else %}
+                                                <span class="badge badge-primary">Custom</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="num">{{ role_counts.get(r.slug, 0) }}</td>
+                                        <td>
+                                            {% if not r.is_system %}
+                                                <button type="button" class="btn btn-danger btn-sm" onclick="openConfirm('/admin/roles/{{ r.id }}/delete', '{{ r.slug }}', 'Delete role {{ r.name }}?', 'Type <code>{{ r.slug }}</code> to confirm')">Delete</button>
+                                            {% else %}
+                                                <span class="text-faint" style="font-size:0.75rem;">Protected</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
                         </div>
-                        <button type="submit" class="btn btn-primary">Save Permission Changes</button>
-                    </form>
-                {% else %}
-                    <div class="empty-state">
-                        <h2>Nothing to manage yet</h2>
-                        <p>You need both registered users and installed sub-apps to manage permissions.</p>
                     </div>
-                {% endif %}
+                </div>
+            </div>
+
+            <!-- Sub-panel 2: Member Flairs & Badges -->
+            <div class="sub-tab-panel" id="subpanel-flairs">
+                <div class="grid grid-2 mb-4">
+                    <div class="card">
+                        <h2 class="card-title mb-2" style="color: var(--accent);">Preset Flair Badges</h2>
+                        <p class="text-muted mb-2" style="font-size:0.85rem;">Click any preset flair to quickly apply it in the member assignment table.</p>
+                        <div class="flex" style="flex-direction:column; gap:0.6rem;">
+                            {% for preset in presets %}
+                                <div class="flex-between" style="background: var(--bg-elevated); padding:0.6rem 0.8rem; border-radius:var(--radius); border:1px solid var(--border);">
+                                    <span class="badge" style="color: {{ preset.color }}; border-color: {{ preset.color }}66;">{{ preset.title }}</span>
+                                    <span class="text-muted mono" style="font-size:0.72rem;">{{ preset.color }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h2 class="card-title mb-0">Member Flair Assignments</h2>
+                            <span class="badge badge-primary">{{ users|length }}</span>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Member</th>
+                                        <th>Current Flair</th>
+                                        <th>Assign / Update</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for u in users %}
+                                    {% set f = user_flairs.get(u.id) %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ u.name or u.email }}</strong>
+                                            <div class="text-muted" style="font-size:0.75rem;">{{ u.email }}</div>
+                                        </td>
+                                        <td>
+                                            {% if f and f.title %}
+                                                <span class="badge" style="color: {{ f.color }}; border-color: {{ f.color }}66;">{{ f.title }}</span>
+                                            {% else %}
+                                                <span class="text-faint" style="font-size:0.75rem;">No Flair</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <form action="/admin/flairs" method="POST" class="flex gap-1" style="align-items:center;">
+                                                <input type="hidden" name="user_id" value="{{ u.id }}">
+                                                <input type="text" name="flair_title" placeholder="Flair title..." value="{{ f.title if f else '' }}" class="form-input" style="width:130px; padding:0.3rem; font-size:0.8rem;">
+                                                <input type="color" name="flair_color" value="{{ f.color if f else '#F5A524' }}" style="height:28px; width:32px; padding:0; border:none; background:none; cursor:pointer;">
+                                                <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
+                                                {% if f and f.title %}
+                                                    <button type="submit" name="action" value="clear" class="btn btn-secondary btn-sm" title="Clear Flair">✕</button>
+                                                {% endif %}
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sub-panel 3: App Access Permissions Matrix -->
+            <div class="sub-tab-panel" id="subpanel-matrix">
+                <div class="card">
+                    <div class="card-header flex-between" style="flex-wrap:wrap; gap:0.75rem;">
+                        <div>
+                            <h2 class="card-title mb-0">App Access Permissions</h2>
+                            <p class="text-muted mb-0" style="font-size:0.8rem;">Manage member access by application, member, or full matrix view.</p>
+                        </div>
+                        <div class="btn-group" id="perm-view-controls">
+                            <button type="button" class="btn btn-secondary btn-sm active" data-permview="by-app">By Application</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-permview="by-user">By Member</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-permview="full-grid">Full Grid</button>
+                        </div>
+                    </div>
+
+                    {% if users and apps %}
+                        <form action="/admin/permissions" method="POST" id="form-permissions">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                            <!-- PERM VIEW 1: BY APPLICATION (Default) -->
+                            <div id="permview-by-app" class="permview-section p-3">
+                                <div class="flex-between mb-3" style="flex-wrap:wrap; gap:1rem; background:var(--surface-2); padding:0.6rem 0.8rem; border-radius:var(--radius); border:1px solid var(--border);">
+                                    <div class="flex gap-2" style="align-items:center;">
+                                        <label class="form-label mb-0" style="font-weight:600; white-space:nowrap;">Select Application:</label>
+                                        <select id="perm-app-select" class="form-select" style="width:auto; min-width:220px;" onchange="switchPermApp(this.value)">
+                                            {% for app in apps %}
+                                                <option value="{{ app.id }}">{{ app.name }} (/apps/{{ app.slug }})</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleActiveAppPerms(true)">✓ Grant All</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleActiveAppPerms(false)">✕ Revoke All</button>
+                                    </div>
+                                </div>
+
+                                {% for app in apps %}
+                                    <div class="perm-app-block" id="perm-app-block-{{ app.id }}" style="{% if not loop.first %}display:none;{% endif %}">
+                                        <div class="table-wrap">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Member</th>
+                                                        <th>Role</th>
+                                                        <th>Access Status</th>
+                                                        <th class="actions-col">Toggle Access</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for u in users %}
+                                                        {% set is_checked = perms_map.get((u.id, app.id), True) %}
+                                                        <tr>
+                                                            <td>
+                                                                <strong>{{ u.name or u.email }}</strong>
+                                                                <div class="text-muted mono" style="font-size:0.75rem;">{{ u.email }}</div>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge {% if u.is_admin() %}badge-accent{% else %}badge-primary{% endif %}">{{ u.role }}</span>
+                                                            </td>
+                                                            <td>
+                                                                {% if u.is_admin() %}
+                                                                    <span class="badge badge-success">Full Access (Admin)</span>
+                                                                {% else %}
+                                                                    <span class="badge {% if is_checked %}badge-success{% else %}badge-danger{% endif %} perm-status-badge-{{ u.id }}-{{ app.id }}">
+                                                                        {% if is_checked %}Granted{% else %}Revoked{% endif %}
+                                                                    </span>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td class="actions-col">
+                                                                {% if u.is_admin() %}
+                                                                    <span class="text-faint" style="font-size:0.75rem;">Always Granted</span>
+                                                                {% else %}
+                                                                    <label class="toggle-switch" title="Toggle access for {{ u.email }}">
+                                                                        <input type="checkbox" name="perm_{{ u.id }}_{{ app.id }}" value="1" class="perm-main-checkbox" data-user="{{ u.id }}" data-app="{{ app.id }}" {% if is_checked %}checked{% endif %} onchange="onPermToggleChanged(this)">
+                                                                        <span class="toggle-slider"></span>
+                                                                    </label>
+                                                                {% endif %}
+                                                            </td>
+                                                        </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            <!-- PERM VIEW 2: BY MEMBER -->
+                            <div id="permview-by-user" class="permview-section p-3" style="display:none;">
+                                <div class="flex-between mb-3" style="flex-wrap:wrap; gap:1rem; background:var(--surface-2); padding:0.6rem 0.8rem; border-radius:var(--radius); border:1px solid var(--border);">
+                                    <div class="flex gap-2" style="align-items:center;">
+                                        <label class="form-label mb-0" style="font-weight:600; white-space:nowrap;">Select Member:</label>
+                                        <select id="perm-user-select" class="form-select" style="width:auto; min-width:240px;" onchange="switchPermUser(this.value)">
+                                            {% for u in users %}
+                                                <option value="{{ u.id }}">{{ u.name or u.email }} ({{ u.email }}) — {{ u.role }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleActiveUserPerms(true)">✓ Grant All Apps</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" onclick="toggleActiveUserPerms(false)">✕ Revoke All Apps</button>
+                                    </div>
+                                </div>
+
+                                {% for u in users %}
+                                    <div class="perm-user-block" id="perm-user-block-{{ u.id }}" style="{% if not loop.first %}display:none;{% endif %}">
+                                        <div class="table-wrap">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Application</th>
+                                                        <th>Endpoint Slug</th>
+                                                        <th>Access Status</th>
+                                                        <th class="actions-col">Toggle Access</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for app in apps %}
+                                                        {% set is_checked = perms_map.get((u.id, app.id), True) %}
+                                                        <tr>
+                                                            <td><strong>{{ app.name }}</strong></td>
+                                                            <td><code style="font-size:0.75rem;">/apps/{{ app.slug }}</code></td>
+                                                            <td>
+                                                                {% if u.is_admin() %}
+                                                                    <span class="badge badge-success">Full Access (Admin)</span>
+                                                                {% else %}
+                                                                    <span class="badge {% if is_checked %}badge-success{% else %}badge-danger{% endif %} perm-status-badge-{{ u.id }}-{{ app.id }}">
+                                                                        {% if is_checked %}Granted{% else %}Revoked{% endif %}
+                                                                    </span>
+                                                                {% endif %}
+                                                            </td>
+                                                            <td class="actions-col">
+                                                                {% if u.is_admin() %}
+                                                                    <span class="text-faint" style="font-size:0.75rem;">Always Granted</span>
+                                                                {% else %}
+                                                                    <label class="toggle-switch" title="Toggle {{ app.name }} access for {{ u.email }}">
+                                                                        <input type="checkbox" class="perm-mirror-checkbox" data-user="{{ u.id }}" data-app="{{ app.id }}" {% if is_checked %}checked{% endif %} onchange="onPermMirrorToggleChanged(this)">
+                                                                        <span class="toggle-slider"></span>
+                                                                    </label>
+                                                                {% endif %}
+                                                            </td>
+                                                        </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            <!-- PERM VIEW 3: FULL GRID MATRIX -->
+                            <div id="permview-full-grid" class="permview-section p-3" style="display:none;">
+                                <div class="table-wrap mb-3" style="max-height: 480px; overflow: auto;">
+                                    <table class="table" style="text-align:center;">
+                                        <thead style="position:sticky; top:0; background:var(--surface); z-index:2;">
+                                            <tr>
+                                                <th style="text-align:left;">User / Email</th>
+                                                <th style="text-align:left;">Role</th>
+                                                {% for app in apps %}
+                                                    <th>
+                                                        <div>{{ app.name }}</div>
+                                                        <div class="text-muted" style="font-size:0.7rem; font-weight:normal;">/apps/{{ app.slug }}</div>
+                                                    </th>
+                                                {% endfor %}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for u in users %}
+                                                <tr>
+                                                    <td style="text-align:left;">
+                                                        <strong>{{ u.name or u.email }}</strong><br>
+                                                        <span class="text-muted" style="font-size:0.78rem;">{{ u.email }}</span>
+                                                    </td>
+                                                    <td style="text-align:left;">
+                                                        <span class="badge {% if u.is_admin() %}badge-accent{% else %}badge-primary{% endif %}">{{ u.role }}</span>
+                                                    </td>
+                                                    {% for app in apps %}
+                                                        {% set is_checked = perms_map.get((u.id, app.id), True) %}
+                                                        <td>
+                                                            {% if u.is_admin() %}
+                                                                <span class="text-success" style="font-size:0.8rem;">Full</span>
+                                                            {% else %}
+                                                                <label class="toggle-switch">
+                                                                    <input type="checkbox" class="perm-grid-checkbox" data-user="{{ u.id }}" data-app="{{ app.id }}" {% if is_checked %}checked{% endif %} onchange="onPermGridToggleChanged(this)">
+                                                                    <span class="toggle-slider"></span>
+                                                                </label>
+                                                            {% endif %}
+                                                        </td>
+                                                    {% endfor %}
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="card-footer p-3 flex-between" style="border-top:1px solid var(--border); background:var(--surface-2);">
+                                <span class="text-muted" style="font-size:0.8rem;">Changes apply when saved. Admins retain full portal access automatically.</span>
+                                <button type="submit" class="btn btn-primary">Save Permission Changes</button>
+                            </div>
+                        </form>
+                    {% else %}
+                        <div class="empty-state">
+                            <h2>Nothing to manage yet</h2>
+                            <p>You need both registered users and installed sub-apps to manage permissions.</p>
+                        </div>
+                    {% endif %}
+                </div>
             </div>
         </section>
 
@@ -543,6 +724,43 @@
                     Pre-installation checks are complete. Would you like to proceed with installing this application into AppManager?
                 </p>
             </div>
+
+            <!-- Permission Request Panel (DB / auth-readonly) -->
+            <div id="sec-permissions-panel" class="card p-3 mb-0" style="background:var(--surface-2); border:1px solid var(--border); display:none;">
+                <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">Permission Requests</h4>
+
+                <!-- Database access request -->
+                <div id="sec-db-request" style="display:none;" class="mb-3">
+                    <div class="mb-1" style="font-weight:600; font-size:0.9rem;">🗄️ Shared Database Access</div>
+                    <p id="sec-db-desc" class="text-muted mb-2" style="font-size:0.85rem;"></p>
+                    <div class="form-group mb-2">
+                        <label class="form-label">Grant database access?</label>
+                        <select id="sec-db-decision" class="form-input">
+                            <option value="deny">Deny (app uses its own local SQLite)</option>
+                            <option value="scoped">Approve — Scoped (own table prefix / schema)</option>
+                            <option value="full">Approve — Full (raw access to host DB, trusted only)</option>
+                        </select>
+                    </div>
+                    <div id="sec-db-full-warning" class="alert alert-danger mb-0" style="display:none; font-size:0.8rem;">
+                        ⚠️ Full access lets this app read and modify ALL AppManager data, including other apps' data and user accounts. Only approve if you trust this app completely.
+                    </div>
+                </div>
+
+                <!-- Auth read-only request -->
+                <div id="sec-auth-request" style="display:none;">
+                    <div class="mb-1" style="font-weight:600; font-size:0.9rem;">🔐 Read-Only Auth Access</div>
+                    <p class="text-muted mb-2" style="font-size:0.85rem;">
+                        This app requests read-only access to a narrow auth subset: <strong>login state, display name, and role</strong> only. Email, user id, passwords, and tokens are never exposed.
+                    </p>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Grant read-only auth access?</label>
+                        <select id="sec-auth-decision" class="form-input">
+                            <option value="deny">Deny</option>
+                            <option value="grant">Approve</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Footer Actions -->
@@ -589,31 +807,142 @@
 
 {% block extra_js %}
 <script>
-    // Tab switching via sidebar links
-    document.querySelectorAll('.admin-nav a').forEach(function (link) {
-        link.addEventListener('click', function (e) {
-            e.preventDefault();
-            activateTab(link.getAttribute('data-tab'));
-            history.replaceState(null, '', '#' + link.getAttribute('data-tab'));
+    function activateSubTab(subtab) {
+        if (!subtab) subtab = 'roles';
+        document.querySelectorAll('.sub-tab-panel').forEach(function (sp) {
+            sp.classList.toggle('active', sp.id === 'subpanel-' + subtab);
         });
-    });
+        document.querySelectorAll('.admin-subnav-btn').forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-subtab') === subtab);
+        });
+        document.querySelectorAll('.admin-nav a[data-subtab]').forEach(function (link) {
+            link.classList.toggle('active', link.getAttribute('data-subtab') === subtab);
+        });
+    }
 
-    function activateTab(tab) {
+    function activateTab(tab, subtab) {
         document.querySelectorAll('.admin-nav a').forEach(function (a) {
-            a.classList.toggle('active', a.getAttribute('data-tab') === tab);
+            var aTab = a.getAttribute('data-tab');
+            var aSub = a.getAttribute('data-subtab');
+            if (subtab && aSub) {
+                a.classList.toggle('active', aTab === tab && aSub === subtab);
+            } else {
+                a.classList.toggle('active', aTab === tab && (!aSub || subtab === 'roles'));
+            }
         });
         document.querySelectorAll('.tab-panel').forEach(function (p) {
             p.classList.toggle('active', p.id === 'panel-' + tab);
         });
+        if (tab === 'access') {
+            activateSubTab(subtab || 'roles');
+        }
     }
 
-    // Deep-link to a tab on load
+    // Sidebar navigation click handler
+    document.querySelectorAll('.admin-nav a').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            var tab = link.getAttribute('data-tab');
+            var subtab = link.getAttribute('data-subtab');
+            activateTab(tab, subtab);
+            var hashTarget = subtab ? ('access-' + subtab) : tab;
+            history.replaceState(null, '', '#' + hashTarget);
+        });
+    });
+
+    // Subnav button click handler inside Access Management
+    document.querySelectorAll('.admin-subnav-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var subtab = btn.getAttribute('data-subtab');
+            activateSubTab(subtab);
+            history.replaceState(null, '', '#access-' + subtab);
+        });
+    });
+
+    // Deep-link handling on page load (#apps, #users, #access, #access-roles, #access-flairs, #access-matrix)
     (function () {
         var hash = window.location.hash.replace('#', '');
-        if (hash && document.getElementById('panel-' + hash)) {
+        if (hash.startsWith('access-')) {
+            var sub = hash.replace('access-', '');
+            activateTab('access', sub);
+        } else if (hash && document.getElementById('panel-' + hash)) {
             activateTab(hash);
         }
     })();
+
+    // Permission View Controls (By App, By Member, Full Grid)
+    document.querySelectorAll('#perm-view-controls button').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var v = btn.getAttribute('data-permview');
+            document.querySelectorAll('#perm-view-controls button').forEach(function(b) {
+                b.classList.toggle('active', b === btn);
+            });
+            document.querySelectorAll('.permview-section').forEach(function(sec) {
+                sec.style.display = (sec.id === 'permview-' + v) ? 'block' : 'none';
+            });
+        });
+    });
+
+    function switchPermApp(appId) {
+        document.querySelectorAll('.perm-app-block').forEach(function(blk) {
+            blk.style.display = (blk.id === 'perm-app-block-' + appId) ? 'block' : 'none';
+        });
+    }
+
+    function switchPermUser(userId) {
+        document.querySelectorAll('.perm-user-block').forEach(function(blk) {
+            blk.style.display = (blk.id === 'perm-user-block-' + userId) ? 'block' : 'none';
+        });
+    }
+
+    function syncPermState(userId, appId, isChecked) {
+        var mainCb = document.querySelector('.perm-main-checkbox[data-user="' + userId + '"][data-app="' + appId + '"]');
+        if (mainCb) mainCb.checked = isChecked;
+
+        var mirrorCb = document.querySelector('.perm-mirror-checkbox[data-user="' + userId + '"][data-app="' + appId + '"]');
+        if (mirrorCb) mirrorCb.checked = isChecked;
+
+        var gridCb = document.querySelector('.perm-grid-checkbox[data-user="' + userId + '"][data-app="' + appId + '"]');
+        if (gridCb) gridCb.checked = isChecked;
+
+        document.querySelectorAll('.perm-status-badge-' + userId + '-' + appId).forEach(function(bdg) {
+            bdg.className = 'badge ' + (isChecked ? 'badge-success' : 'badge-danger') + ' perm-status-badge-' + userId + '-' + appId;
+            bdg.textContent = isChecked ? 'Granted' : 'Revoked';
+        });
+    }
+
+    function onPermToggleChanged(el) {
+        var u = el.getAttribute('data-user');
+        var a = el.getAttribute('data-app');
+        syncPermState(u, a, el.checked);
+    }
+    function onPermMirrorToggleChanged(el) {
+        var u = el.getAttribute('data-user');
+        var a = el.getAttribute('data-app');
+        syncPermState(u, a, el.checked);
+    }
+    function onPermGridToggleChanged(el) {
+        var u = el.getAttribute('data-user');
+        var a = el.getAttribute('data-app');
+        syncPermState(u, a, el.checked);
+    }
+
+    function toggleActiveAppPerms(grant) {
+        var selApp = document.getElementById('perm-app-select').value;
+        document.querySelectorAll('.perm-main-checkbox[data-app="' + selApp + '"]').forEach(function(cb) {
+            cb.checked = grant;
+            syncPermState(cb.getAttribute('data-user'), selApp, grant);
+        });
+    }
+
+    function toggleActiveUserPerms(grant) {
+        var selUser = document.getElementById('perm-user-select').value;
+        document.querySelectorAll('.perm-main-checkbox[data-user="' + selUser + '"]').forEach(function(cb) {
+            cb.checked = grant;
+            syncPermState(selUser, cb.getAttribute('data-app'), grant);
+        });
+    }
 
     function toggleRow(id) {
         var el = document.getElementById(id);
@@ -820,6 +1149,48 @@
             depsContainer.innerHTML = depHtml;
         }
 
+        // Populate the permission request panel (DB / auth-readonly) from the manifest.
+        var manifest = data.manifest || {};
+        var permPanel = document.getElementById('sec-permissions-panel');
+        var dbReq = document.getElementById('sec-db-request');
+        var authReq = document.getElementById('sec-auth-request');
+        var anyRequested = false;
+
+        if (manifest.requests_database) {
+            dbReq.style.display = 'block';
+            document.getElementById('sec-db-desc').textContent =
+                (manifest.database_description || 'This app requests access to the shared database.') +
+                ' (requested level: ' + (manifest.database_access_level || 'scoped') + ')';
+            // Default the dropdown to the requested level if it's valid.
+            var dbSel = document.getElementById('sec-db-decision');
+            var reqLevel = manifest.database_access_level || 'scoped';
+            if (reqLevel === 'scoped' || reqLevel === 'full') {
+                dbSel.value = reqLevel;
+            }
+            anyRequested = true;
+        } else {
+            dbReq.style.display = 'none';
+        }
+
+        if (manifest.requests_auth_readonly) {
+            authReq.style.display = 'block';
+            anyRequested = true;
+        } else {
+            authReq.style.display = 'none';
+        }
+
+        permPanel.style.display = anyRequested ? 'block' : 'none';
+
+        // Show/hide the full-access warning based on the DB decision dropdown.
+        var dbSel = document.getElementById('sec-db-decision');
+        var fullWarn = document.getElementById('sec-db-full-warning');
+        if (dbSel) {
+            dbSel.addEventListener('change', function() {
+                fullWarn.style.display = (dbSel.value === 'full') ? 'block' : 'none';
+            });
+            fullWarn.style.display = (dbSel.value === 'full') ? 'block' : 'none';
+        }
+
         var confirmBtn = document.getElementById('btn-confirm-security');
         confirmBtn.disabled = false;
         confirmBtn.textContent = isReplacementAction ? 'Proceed & Upgrade Application' : 'Proceed & Install Application';
@@ -913,7 +1284,9 @@
                     staging_id: currentStagingId,
                     name: currentAppName,
                     slug: currentAppSlug,
-                    entry_point: currentAppEntry
+                    entry_point: currentAppEntry,
+                    db_access: (document.getElementById('sec-db-decision') || {}).value || 'deny',
+                    auth_readonly: (document.getElementById('sec-auth-decision') || {}).value || 'deny'
                 })
             })
             .then(function(r) {

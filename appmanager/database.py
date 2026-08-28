@@ -56,6 +56,49 @@ def init_db(app):
                         )
                         conn.commit()
 
+                # Ensure the app_db_permissions table exists (created by db.create_all()
+                # for fresh DBs; this is a safety net for existing DBs).
+                if "app_db_permissions" not in tables:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS app_db_permissions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                app_id INTEGER NOT NULL,
+                                permission_type VARCHAR(32) NOT NULL DEFAULT 'db',
+                                granted BOOLEAN NOT NULL DEFAULT 0,
+                                access_level VARCHAR(16) NOT NULL DEFAULT 'scoped',
+                                table_prefix VARCHAR(100),
+                                granted_at DATETIME,
+                                granted_by INTEGER,
+                                revoked_at DATETIME,
+                                revoked_by INTEGER,
+                                CONSTRAINT uq_app_permission_type UNIQUE (app_id, permission_type)
+                            )
+                            """
+                        )
+                    )
+                    conn.commit()
+
+                # Ensure the audit_log table exists (safety net for existing DBs).
+                if "audit_log" not in tables:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS audit_log (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                actor_type VARCHAR(16) NOT NULL DEFAULT 'admin',
+                                actor_id INTEGER,
+                                app_id INTEGER,
+                                action VARCHAR(64) NOT NULL,
+                                details_json TEXT
+                            )
+                            """
+                        )
+                    )
+                    conn.commit()
+
                 if "users" in tables:
                     user_cols = [c["name"] for c in inspector.get_columns("users")]
                     if "last_login_at" not in user_cols:

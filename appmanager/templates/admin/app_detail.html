@@ -20,6 +20,7 @@
             <div class="admin-nav-group-title">MAINTENANCE</div>
             <a href="#panel-maintenance" class="admin-nav-link" data-panel="maintenance">Updates &amp; Package</a>
             <a href="#panel-dependencies" class="admin-nav-link" data-panel="dependencies">Dependencies</a>
+            <a href="#panel-permissions" class="admin-nav-link" data-panel="permissions">Permissions</a>
         </div>
         <div class="admin-nav-group">
             <div class="admin-nav-group-title">APP PANELS</div>
@@ -177,6 +178,73 @@
             </div>
         </section>
 
+        <!-- ============ PERMISSIONS PANEL ============ -->
+        <section class="tab-panel app-panel" id="panel-permissions">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Permissions</h2>
+                    <span class="badge badge-outline mono">adjustable</span>
+                </div>
+                <div class="card-body">
+                    {% set db_perm = permissions|selectattr('permission_type', 'equalto', 'db')|first %}
+                    {% set auth_perm = permissions|selectattr('permission_type', 'equalto', 'auth_readonly')|first %}
+
+                    <form method="POST" action="/admin/apps/{{ app.slug }}/permissions">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <!-- Database access -->
+                        <div class="card p-3 mb-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                            <h4 class="mb-1" style="font-size:0.95rem;">🗄️ Shared Database Access</h4>
+                            <p class="text-muted mb-2" style="font-size:0.85rem;">
+                                {% if manifest.get('database_description') %}
+                                    <em>{{ manifest.get('database_description') }}</em><br>
+                                {% endif %}
+                                Current: <strong>{{ db_perm.access_level if db_perm else 'denied' }}</strong>
+                                {% if db_perm and db_perm.granted %} <span class="badge badge-success">granted</span>{% else %} <span class="badge badge-danger">denied</span>{% endif %}
+                            </p>
+                            <div class="form-group mb-2">
+                                <label class="form-label">Database access level</label>
+                                <select name="db_access" class="form-input">
+                                    <option value="deny" {% if not db_perm or not db_perm.granted %}selected{% endif %}>Deny (app uses its own local SQLite)</option>
+                                    <option value="scoped" {% if db_perm and db_perm.granted and db_perm.access_level == 'scoped' %}selected{% endif %}>Scoped (own table prefix / schema)</option>
+                                    <option value="full" {% if db_perm and db_perm.granted and db_perm.access_level == 'full' %}selected{% endif %}>Full (raw access to host DB, trusted only)</option>
+                                </select>
+                            </div>
+                            <div class="form-group mb-2">
+                                <label class="form-label">
+                                    <input type="checkbox" name="migrate_db" value="1" class="perm-toggle">
+                                    Migrate existing app data if the scope changes
+                                </label>
+                            </div>
+                            <div class="alert alert-danger mb-0" style="font-size:0.8rem; display:none;" id="perm-db-full-warning">
+                                ⚠️ Full access lets this app read and modify ALL AppManager data, including other apps' data and user accounts. Only approve if you trust this app completely.
+                            </div>
+                        </div>
+
+                        <!-- Auth read-only -->
+                        <div class="card p-3 mb-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                            <h4 class="mb-1" style="font-size:0.95rem;">🔐 Read-Only Auth Access</h4>
+                            <p class="text-muted mb-2" style="font-size:0.85rem;">
+                                Read-only access to a narrow auth subset: <strong>login state, display name, and role</strong> only. Email, user id, passwords, and tokens are never exposed.
+                                Current: {% if auth_perm and auth_perm.granted %}<span class="badge badge-success">granted</span>{% else %}<span class="badge badge-danger">denied</span>{% endif %}
+                            </p>
+                            <div class="form-group mb-0">
+                                <label class="form-label">Read-only auth access</label>
+                                <select name="auth_readonly" class="form-input">
+                                    <option value="deny" {% if not auth_perm or not auth_perm.granted %}selected{% endif %}>Deny</option>
+                                    <option value="grant" {% if auth_perm and auth_perm.granted %}selected{% endif %}>Grant</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="action-group" style="justify-content:flex-end;">
+                            <button type="submit" class="btn btn-primary btn-sm">Save Permissions</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+
         {% for item in rendered %}
             <section class="tab-panel app-panel" id="panel-{{ item.panel.panel_id }}">
                 <div class="card">
@@ -272,5 +340,16 @@
             if (firstLink) firstLink.classList.add('active');
         }
     })();
+
+    // Show/hide the full-access warning in the permissions panel.
+    var permDbSel = document.querySelector('select[name="db_access"]');
+    var permFullWarn = document.getElementById('perm-db-full-warning');
+    if (permDbSel && permFullWarn) {
+        function updateWarn() {
+            permFullWarn.style.display = (permDbSel.value === 'full') ? 'block' : 'none';
+        }
+        permDbSel.addEventListener('change', updateWarn);
+        updateWarn();
+    }
 </script>
 {% endblock %}

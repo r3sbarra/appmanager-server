@@ -202,6 +202,84 @@ class AppExtensionData(db.Model):
     )
 
 
+class AppDbPermission(db.Model):
+    """
+    Per-app permission to access the host's shared database and/or read-only
+    auth context. Created when an app's manifest requests access; the admin
+    approves/denies at install time and can adjust it later.
+
+    ``permission_type`` is ``"db"`` (shared database access) or
+    ``"auth_readonly"`` (read-only login state / display name / role).
+    """
+
+    __tablename__ = "app_db_permissions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    app_id = db.Column(db.Integer, db.ForeignKey("installed_apps.id"), nullable=False, index=True)
+    permission_type = db.Column(db.String(32), nullable=False, default="db")  # db | auth_readonly
+    granted = db.Column(db.Boolean, default=False, nullable=False)
+    access_level = db.Column(db.String(16), default="scoped", nullable=False)  # scoped | full | denied
+    table_prefix = db.Column(db.String(100), nullable=True)  # auto-assigned "app_<slug>_"
+    granted_at = db.Column(db.DateTime, nullable=True)
+    granted_by = db.Column(db.Integer, nullable=True)  # admin user id
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    revoked_by = db.Column(db.Integer, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("app_id", "permission_type", name="uq_app_permission_type"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "app_id": self.app_id,
+            "permission_type": self.permission_type,
+            "granted": self.granted,
+            "access_level": self.access_level,
+            "table_prefix": self.table_prefix,
+            "granted_at": self.granted_at.isoformat() if self.granted_at else None,
+            "granted_by": self.granted_by,
+            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+            "revoked_by": self.revoked_by,
+        }
+
+
+class AuditLog(db.Model):
+    """
+    Append-only audit trail of security-relevant actions: app install/uninstall,
+    DB permission grants/revokes, config changes, API key rotation, etc.
+    """
+
+    __tablename__ = "audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=db.func.now(), nullable=False, index=True)
+    actor_type = db.Column(db.String(16), nullable=False, default="admin")  # admin | system | app
+    actor_id = db.Column(db.Integer, nullable=True)  # admin user id or app id
+    app_id = db.Column(db.Integer, db.ForeignKey("installed_apps.id"), nullable=True, index=True)
+    action = db.Column(db.String(64), nullable=False, index=True)
+    details_json = db.Column(db.Text, nullable=True)
+
+    def to_dict(self):
+        import json
+
+        details = None
+        if self.details_json:
+            try:
+                details = json.loads(self.details_json)
+            except Exception:
+                details = self.details_json
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "actor_type": self.actor_type,
+            "actor_id": self.actor_id,
+            "app_id": self.app_id,
+            "action": self.action,
+            "details": details,
+        }
+
+
 class AppConfig(db.Model):
     """
     Typed per-app configuration store. Replaces the freeform `settings_json`

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log - AppManager{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div>
+        <h1 style="font-size: 1.8rem; font-weight: 700;">Audit Log</h1>
+        <p style="color: var(--text-muted);">Append-only trail of security-relevant actions</p>
+    </div>
+    <a href="/admin" class="btn btn-secondary">&larr; Back to Admin Dashboard</a>
+</div>
+
+<div class="card mb-3">
+    <form method="GET" action="/admin/audit-log" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+        <div>
+            <label class="form-label">App</label>
+            <select name="app_id" class="form-input">
+                <option value="">All apps</option>
+                {% for a in apps %}
+                    <option value="{{ a.id }}" {% if filter_app_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.slug }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label">Action</label>
+            <input type="text" name="action" value="{{ filter_action or '' }}" class="form-input" placeholder="e.g. db_permission_grant">
+        </div>
+        <div>
+            <label class="form-label">Actor type</label>
+            <select name="actor_type" class="form-input">
+                <option value="">All</option>
+                <option value="admin" {% if filter_actor_type == 'admin' %}selected{% endif %}>admin</option>
+                <option value="system" {% if filter_actor_type == 'system' %}selected{% endif %}>system</option>
+                <option value="app" {% if filter_actor_type == 'app' %}selected{% endif %}>app</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/admin/audit-log" class="btn btn-secondary">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    {% if entries %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Action</th>
+                        <th>Actor</th>
+                        <th>App</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in entries %}
+                        <tr>
+                            <td class="mono" style="white-space:nowrap;">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') if e.timestamp else '—' }}</td>
+                            <td><span class="badge badge-outline mono">{{ e.action }}</span></td>
+                            <td class="mono">{{ e.actor_type }}{% if e.actor_id %}:{{ e.actor_id }}{% endif %}</td>
+                            <td class="mono">{{ e.app_id or '—' }}</td>
+                            <td style="font-size:0.8rem;">
+                                {% if e.details_json %}
+                                    <span class="mono text-faint">{{ e.details_json[:120] }}{% if e.details_json|length > 120 %}…{% endif %}</span>
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state p-4">
+            <p class="text-muted mono mb-0">No audit log entries match the current filters.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

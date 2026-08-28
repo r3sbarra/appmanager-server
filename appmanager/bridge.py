@@ -11,7 +11,14 @@ def report_event(app_slug: str, event_type: str, data: Optional[Dict[str, Any]] 
     """
     Sub-apps can call report_event to log events directly to AppManager host telemetry.
     Zero-network overhead in-process communication.
+
+    Rate-limited per app to prevent a single app from flooding the host.
     """
+    from appmanager.ratelimit import allow
+
+    if not allow(app_slug, "report_event"):
+        return False
+
     try:
         payload = json.dumps(data) if data is not None else None
         log_entry = AppTelemetryLog(
@@ -88,3 +95,35 @@ def get_app_settings(app_slug: str) -> Dict[str, Any]:
     except Exception:
         pass
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Shared database access + read-only auth context (re-exported from db_access)
+# ---------------------------------------------------------------------------
+
+def get_db_engine(app_slug: str):
+    """Return a SQLAlchemy engine for the app's shared DB access, or None."""
+    from appmanager.db_access import get_db_engine as _impl
+
+    return _impl(app_slug)
+
+
+def refresh_db_engine(app_slug: str):
+    """Dispose and re-fetch the app's DB engine (for rotation / permission changes)."""
+    from appmanager.db_access import refresh_db_engine as _impl
+
+    return _impl(app_slug)
+
+
+def get_db_prefix(app_slug: str) -> Optional[str]:
+    """Return the app's scoped table prefix, or None."""
+    from appmanager.db_access import get_db_prefix as _impl
+
+    return _impl(app_slug)
+
+
+def get_auth_context(app_slug: str, headers: Optional[Any] = None) -> Optional[Dict[str, Any]]:
+    """Return a narrow read-only auth context (login state / display name / role)."""
+    from appmanager.db_access import get_auth_context as _impl
+
+    return _impl(app_slug, headers)
