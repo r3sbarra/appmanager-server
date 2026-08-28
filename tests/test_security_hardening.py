@@ -243,3 +243,20 @@ def test_auth_rate_limiter():
 
     # 4th attempt should be blocked
     assert check_rate_limit(key, limit=3, window_seconds=10) is False
+
+
+def test_sensitive_data_redaction():
+    from appmanager.security import SensitiveDataFilter, redact_sensitive_data
+    import logging
+
+    raw_log = "User failed auth with Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.test and token=secret12345"
+    sanitized = redact_sensitive_data(raw_log)
+    assert "eyJhbGci" not in sanitized
+    assert "[REDACTED]" in sanitized
+
+    # Test SensitiveDataFilter
+    filt = SensitiveDataFilter()
+    rec = logging.LogRecord("appmanager", logging.INFO, "path", 10, "Accessing token=super_secret_tok", (), None)
+    filt.filter(rec)
+    assert "super_secret_tok" not in rec.msg
+    assert "[REDACTED]" in rec.msg

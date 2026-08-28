@@ -7,7 +7,7 @@ import stat
 import time
 import zipfile
 from functools import wraps
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from flask import abort, current_app, g, jsonify, request
@@ -240,3 +240,73 @@ def extract_zip_safely(zip_path: str, target_dir: str) -> None:
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             with zip_ref.open(member) as src, open(dest_path, "wb") as dst:
                 shutil.copyfileobj(src, dst)
+
+
+import logging
+
+SENSITIVE_PATTERNS = [
+    (r"(Bearer\s+)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
+    (r"(token=)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
+    (r"(secret=)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
+    (r"(AIC_TOKEN_SECRET=)[^\s]+", r"\1[REDACTED]"),
+    (r"(JWT_SECRET=)[^\s]+", r"\1[REDACTED]"),
+    (r"(SECRET_KEY=)[^\s]+", r"\1[REDACTED]"),
+    (r"(api_key=)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
+]
+
+
+def redact_sensitive_data(text: Any) -> Any:
+    """
+    Sanitizes log messages, exception details, and string inputs to prevent sensitive tokens,
+    keys, and authorization headers from appearing in logs or error traces.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+
+    sanitized = text
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+    # Redact actual configured secrets if app context is active
+    try:
+        if current_app:
+            for key_name in (
+                "SECRET_KEY",
+                "JWT_SECRET",
+                "AIC_TOKEN_SECRET",
+                "GOOGLE_CLIENT_SECRET",
+                "SMTP_PASSWORD",
+            ):
+                secret_val = current_app.config.get(key_name)
+                if (
+                    secret_val
+                    and isinstance(secret_val, str)
+                    and len(secret_val) >= 8
+                    and not secret_val.startswith("default-")
+                ):
+                    sanitized = sanitized.replace(secret_val, "[REDACTED]")
+    except Exception:
+        pass
+
+    return sanitized
+
+
+class SensitiveDataFilter(logging.Filter):
+    """
+    Logging filter that automatically redacts sensitive security tokens, authorization headers, and secret keys.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact_sensitive_data(record.msg)
+        if record.args:
+            if isinstance(record.args, tuple):
+                record.args = tuple(
+                    redact_sensitive_data(arg) if isinstance(arg, str) else arg for arg in record.args
+                )
+            elif isinstance(record.args, dict):
+                record.args = {
+                    k: redact_sensitive_data(v) if isinstance(v, str) else v
+                    for k, v in record.args.items()
+                }
+        return True

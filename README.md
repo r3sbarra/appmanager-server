@@ -116,6 +116,21 @@ Debug and test your sub-app locally with mock user authentication headers:
 appmanager dev analytics --port 5001 --email dev@example.com --role admin
 ```
 
+### Cryptographic Token & Secrets Generator
+
+Generate production-ready secrets (`SECRET_KEY`, `JWT_SECRET`, `AIC_TOKEN_SECRET`) or individual secure tokens:
+
+```bash
+# Generate complete set of formatted .env secrets
+appmanager generate-tokens --env
+
+# Generate a single 256-bit URL-safe token
+appmanager generate-tokens
+
+# Generate a 256-bit Hexadecimal token
+appmanager generate-tokens -f hex
+```
+
 ---
 
 ## 🛠️ Sub-App Specification (`manifest.json`)

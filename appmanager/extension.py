@@ -27,12 +27,17 @@ def _setup_logging(app: Flask) -> None:
         "[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
     )
 
+    from appmanager.security import SensitiveDataFilter
+
     logger = logging.getLogger("appmanager")
     logger.setLevel(log_level)
+    sens_filter = SensitiveDataFilter()
+    logger.addFilter(sens_filter)
 
     if not logger.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter(log_format))
+        handler.addFilter(sens_filter)
         logger.addHandler(handler)
 
 
