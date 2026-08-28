@@ -10,6 +10,7 @@ AppManager is configured through environment variables or a `.env` file located 
 | :--- | :--- | :--- | :--- |
 | `SECRET_KEY` | string | `appmanager-super-secret-...` | Flask session secret key. **Must be changed in production** (min 32 chars). |
 | `JWT_SECRET` | string | `jwt-secret-key-...` | Secret key used for signing JWT tokens. |
+| `AIC_TOKEN_SECRET` | string | `""` | Secret key used for AI Captcha verification tokens and sub-app integration. |
 | `JWT_ACCESS_TOKEN_EXPIRES_DAYS` | int | `7` | Number of days before JWT tokens expire. |
 | `MAGIC_LINK_EXPIRES_MINUTES` | int | `15` | Expiration window for magic login link tokens. |
 | `ALLOW_DEV_MAGIC_LOGIN` | bool | `false` | When `true`, displays one-click login button on page if SMTP is unconfigured. |

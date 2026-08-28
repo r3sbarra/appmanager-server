@@ -31,6 +31,7 @@ class Config:
         "SECRET_KEY", "appmanager-super-secret-key-change-in-production-min-32-chars"
     )
     JWT_SECRET = os.getenv("JWT_SECRET", "jwt-secret-key-change-in-production-min-32-chars")
+    AIC_TOKEN_SECRET = os.getenv("AIC_TOKEN_SECRET", "")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_DAYS", 7)))
     MAGIC_LINK_EXPIRES_MINUTES = int(os.getenv("MAGIC_LINK_EXPIRES_MINUTES", 15))
 

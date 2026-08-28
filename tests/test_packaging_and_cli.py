@@ -38,6 +38,31 @@ def test_cli_help(capsys):
     assert "seed" in captured.out
     assert "new-subapp" in captured.out
     assert "validate-subapp" in captured.out
+    assert "generate-tokens" in captured.out
+
+
+def test_cli_generate_tokens(capsys):
+    # Single URL-safe token
+    ret = main(["generate-tokens"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    token = captured.out.strip()
+    assert len(token) > 20
+
+    # Hex format token
+    ret = main(["generate-token", "-f", "hex"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    token_hex = captured.out.strip()
+    assert len(token_hex) == 64  # 32 bytes * 2 hex chars
+
+    # Complete .env secrets set
+    ret = main(["generate-tokens", "--env"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "SECRET_KEY=" in captured.out
+    assert "JWT_SECRET=" in captured.out
+    assert "AIC_TOKEN_SECRET=" in captured.out
 
 
 def test_cli_list_apps_and_seed(capsys, monkeypatch, tmp_path):

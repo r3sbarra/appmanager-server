@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import platform
+import secrets
 import sys
 from datetime import datetime, timezone
 from typing import Optional
@@ -1050,6 +1051,34 @@ def install_deps_cli(slug: Optional[str] = None, install_all: bool = False) -> i
     return check_deps_cli(slug=slug, check_all=install_all, install=True)
 
 
+def generate_tokens_cli(nbytes: int = 32, fmt: str = "urlsafe", env_format: bool = False) -> int:
+    """
+    Generates cryptographically secure secret keys and tokens.
+    If env_format is True, outputs a set of .env secret key assignments.
+    """
+    if env_format or fmt == "env":
+        secret_key = secrets.token_urlsafe(nbytes)
+        jwt_secret = secrets.token_urlsafe(nbytes)
+        aic_secret = secrets.token_urlsafe(nbytes)
+        print("======================================================================")
+        print(" AppManager Cryptographically Secure Secrets Generator (.env)")
+        print("======================================================================\n")
+        print("# Paste the following into your .env file:")
+        print(f"SECRET_KEY={secret_key}")
+        print(f"JWT_SECRET={jwt_secret}")
+        print(f"AIC_TOKEN_SECRET={aic_secret}\n")
+        print("======================================================================")
+        return 0
+
+    if fmt == "hex":
+        token = secrets.token_hex(nbytes)
+    else:
+        token = secrets.token_urlsafe(nbytes)
+
+    print(token)
+    return 0
+
+
 def run_server(host="0.0.0.0", port=5000, reload=True):
     """
     Starts the WSGI Dynamic Dispatcher local development server.
@@ -1269,13 +1298,41 @@ def main(args=None):
         "--out", "-o", default="manifest.json", help="Output manifest path (default: manifest.json)"
     )
 
+    # generate-tokens command
+    gen_tok_parser = subparsers.add_parser(
+        "generate-tokens",
+        aliases=["generate-token"],
+        help="Generate cryptographically secure secret keys & .env tokens",
+    )
+    gen_tok_parser.add_argument(
+        "-b", "--bytes", type=int, default=32, help="Number of random bytes/entropy (default: 32)"
+    )
+    gen_tok_parser.add_argument(
+        "-f",
+        "--format",
+        choices=["urlsafe", "hex", "env"],
+        default="urlsafe",
+        help="Token format: 'urlsafe', 'hex', or 'env' (default: urlsafe)",
+    )
+    gen_tok_parser.add_argument(
+        "--env",
+        action="store_true",
+        help="Generate a complete set of .env secrets (SECRET_KEY, JWT_SECRET, AIC_TOKEN_SECRET)",
+    )
+
     parsed = parser.parse_args(args)
 
     if not parsed.command:
         parser.print_help()
         return 0
 
-    if parsed.command == "run":
+    if parsed.command in ("generate-tokens", "generate-token"):
+        return generate_tokens_cli(
+            nbytes=parsed.bytes,
+            fmt=parsed.format,
+            env_format=parsed.env or (parsed.format == "env"),
+        )
+    elif parsed.command == "run":
         run_server(host=parsed.host, port=parsed.port, reload=parsed.reload)
     elif parsed.command == "seed":
         seed_db()
