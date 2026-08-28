@@ -4,15 +4,14 @@ include CHANGELOG.md
 include SECURITY.md
 include requirements.txt
 include .env.example
-include appmanager/py.typed
-recursive-include appmanager/templates *
-recursive-include appmanager/static *
-recursive-exclude * __pycache__
-recursive-exclude * *.py[co]
-recursive-exclude * .env*
-recursive-exclude * instance *
-recursive-exclude * installed_apps *
-recursive-exclude * *.db
-recursive-exclude * *.sqlite*
-recursive-exclude * .venv *
-recursive-exclude * .pytest_cache *
+graft appmanager/templates
+graft appmanager/static
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .env*
+global-exclude *.db
+global-exclude *.sqlite*
+prune instance
+prune installed_apps
+prune .venv
+prune .pytest_cache
