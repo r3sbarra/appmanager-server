@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - 2026-08-28
+
+### Added
+- **Dependency & Environment Conflict Engine (`appmanager.dependency_manager`)**:
+  - Python runtime version verification comparing manifest `requires_python` against `platform.python_version()`.
+  - PEP 508 requirement analyzer checking active environment distributions for satisfied packages, packages to install, and conflicts against core host frameworks (`Flask`, `SQLAlchemy`, etc.).
+  - Shared dependency preservation analyzer protecting packages needed by other sub-apps when uninstalling.
+- **Configurable Virtual Environment Modes (`APP_VENV_MODE`)**:
+  - `"singular"` (Default): Single shared host environment.
+  - `"isolated"`: Per-app isolated virtual environment (`.venv/`).
+- **One-Click Sub-App Updates & Replacements**:
+  - Git Update action (`POST /admin/apps/<id>/update-git`) pulling remote changes with automated AST security scan, dependency sync, and cache reload.
+  - In-place ZIP replacement (`POST /admin/apps/<id>/precheck-replace-zip` -> `confirm-replace-zip`) with atomic rollback protection.
+- **CLI Commands**:
+  - `appmanager update <slug> [--zip <path>]`
+  - `appmanager check-deps [slug] [--all] [--install]`
+  - `appmanager install-deps [slug] [--all]`
+- **Nested AppManager Portals**: Support for nesting AppManager instances as sub-apps within parent AppManager instances with recursive dispatching.
+
+---
+
 ## [0.2.1] - 2026-08-28
 
 ### Added
