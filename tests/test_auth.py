@@ -17,6 +17,7 @@ def app():
             "INSTALLED_APPS_DIR": "/tmp/test_installed_apps",
             "TEMP_UPLOAD_DIR": "/tmp/test_uploads",
             "BASE_DIR": "/tmp",
+            "ALLOW_DEV_MAGIC_LOGIN": True,  # Default to True in base test fixture
         }
     )
     with app.app_context():
@@ -31,10 +32,11 @@ def client(app):
     return app.test_client()
 
 
-def test_magic_link_flow(client, app):
-    # 1. Request magic link
+def test_magic_link_flow_dev_mode(client, app):
+    # 1. Request magic link with ALLOW_DEV_MAGIC_LOGIN=True
     res = client.post("/auth/magic-link", data={"email": "test@example.com"})
     assert res.status_code == 200
+    assert b"Developer Mode Preview" in res.data
 
     # 2. Check token in DB
     with app.app_context():
@@ -52,6 +54,49 @@ def test_magic_link_flow(client, app):
         user = User.query.filter_by(email="test@example.com").first()
         assert user is not None
         assert user.role == "admin"
+
+
+def test_magic_link_fails_when_smtp_and_dev_mode_disabled(app):
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = False
+    app.config["SMTP_SERVER"] = ""
+    client = app.test_client()
+
+    res = client.post("/auth/magic-link", data={"email": "user@example.com"}, follow_redirects=True)
+    assert res.status_code == 200
+    assert b"Email delivery (SMTP) is not configured" in res.data
+
+    with app.app_context():
+        token = MagicLinkToken.query.filter_by(email="user@example.com").first()
+        assert token is None
+
+
+def test_admin_emails_config_provisioning(client, app):
+    app.config["ADMIN_EMAILS"] = ["designated-admin@example.com"]
+    app.config["FIRST_USER_IS_ADMIN"] = False
+
+    # First user who is NOT in ADMIN_EMAILS
+    client.post("/auth/magic-link", data={"email": "regular@example.com"})
+    with app.app_context():
+        t1 = MagicLinkToken.query.filter_by(email="regular@example.com").first()
+        token1 = t1.token
+
+    client.get(f"/auth/verify-magic?token={token1}")
+    with app.app_context():
+        u1 = User.query.filter_by(email="regular@example.com").first()
+        assert u1 is not None
+        assert u1.role == "user"
+
+    # Second user who IS in ADMIN_EMAILS
+    client.post("/auth/magic-link", data={"email": "designated-admin@example.com"})
+    with app.app_context():
+        t2 = MagicLinkToken.query.filter_by(email="designated-admin@example.com").first()
+        token2 = t2.token
+
+    client.get(f"/auth/verify-magic?token={token2}")
+    with app.app_context():
+        u2 = User.query.filter_by(email="designated-admin@example.com").first()
+        assert u2 is not None
+        assert u2.role == "admin"
 
 
 def test_second_user_is_regular_user(client, app):

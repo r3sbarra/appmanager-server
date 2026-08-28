@@ -48,6 +48,21 @@ class Config:
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "noreply@appmanager.local")
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
 
+    # Developer & Admin Provisioning Settings
+    ALLOW_DEV_MAGIC_LOGIN = os.getenv("ALLOW_DEV_MAGIC_LOGIN", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    FIRST_USER_IS_ADMIN = os.getenv("FIRST_USER_IS_ADMIN", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    ADMIN_EMAILS = [
+        e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
+    ]
+
     # Security settings
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")

@@ -12,6 +12,9 @@ AppManager is configured through environment variables or a `.env` file located 
 | `JWT_SECRET` | string | `jwt-secret-key-...` | Secret key used for signing JWT tokens. |
 | `JWT_ACCESS_TOKEN_EXPIRES_DAYS` | int | `7` | Number of days before JWT tokens expire. |
 | `MAGIC_LINK_EXPIRES_MINUTES` | int | `15` | Expiration window for magic login link tokens. |
+| `ALLOW_DEV_MAGIC_LOGIN` | bool | `false` | When `true`, displays one-click login button on page if SMTP is unconfigured. |
+| `FIRST_USER_IS_ADMIN` | bool | `true` | When `true`, grants the admin role to the very first user who registers. |
+| `ADMIN_EMAILS` | string | `""` | Comma-separated list of emails that automatically receive the admin role. |
 | `DATABASE_URL` | string | `sqlite:///instance/appmanager.db` | Database connection string. |
 | `APPMANAGER_BASE_DIR` | path | Current directory / repo root | Root directory used for relative storage paths. |
 | `INSTALLED_APPS_DIR` | path | `${BASE_DIR}/installed_apps` | Directory where sub-application folders are located. |
@@ -59,9 +62,11 @@ GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_DISCOVERY_URL=https://accounts.google.com/.well-known/openid-configuration
 ```
 
-### SMTP Email Settings for Magic Links (Optional)
+### SMTP Email Settings for Magic Links
 
-If SMTP settings are left empty, Magic Login Links will be printed to stdout/terminal logs (ideal for local development).
+In production, AppManager sends one-time Magic Login Links to user inboxes via SMTP. If `SMTP_SERVER` is unconfigured and `ALLOW_DEV_MAGIC_LOGIN=false`, users will be prompted that email delivery is not configured.
+
+For local development or staging testing without SMTP, you can set `ALLOW_DEV_MAGIC_LOGIN=true` to display a one-click login button directly in the browser and log the URL to stdout.
 
 For production email delivery:
 
@@ -72,3 +77,14 @@ SMTP_USER=apikey
 SMTP_PASSWORD=your-smtp-password
 MAIL_DEFAULT_SENDER=noreply@yourdomain.com
 ```
+
+### Admin & Role Provisioning
+
+- **Designated Admins**: Specify one or more admin email addresses using `ADMIN_EMAILS`:
+  ```env
+  ADMIN_EMAILS=admin@yourdomain.com,owner@yourdomain.com
+  ```
+- **First User Bootstrap**: By default, `FIRST_USER_IS_ADMIN=true` grants the `admin` role to the first account registered in a blank database. To disable this and enforce that all users start as standard `user` unless explicitly listed in `ADMIN_EMAILS` or elevated via CLI (`appmanager-server set-role user@example.com admin`):
+  ```env
+  FIRST_USER_IS_ADMIN=false
+  ```
