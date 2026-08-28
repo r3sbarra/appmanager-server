@@ -223,9 +223,12 @@ def test_precheck_reports_slug_conflict_with_versions(auth_client, app):
     assert resp1.status_code == 200
     staging_id_1 = resp1.get_json()["staging_id"]
     assert resp1.get_json()["slug_conflict"] is None
-    assert auth_client.post(
-        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
-    ).get_json()["success"] is True
+    assert (
+        auth_client.post(
+            "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+        ).get_json()["success"]
+        is True
+    )
 
     # Precheck v2 with the same slug -> conflict reported with version diff.
     resp2 = auth_client.post(
@@ -250,9 +253,12 @@ def test_install_confirm_update_replaces_existing_app(auth_client, app):
         content_type="multipart/form-data",
     )
     staging_id_1 = resp1.get_json()["staging_id"]
-    assert auth_client.post(
-        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
-    ).get_json()["success"] is True
+    assert (
+        auth_client.post(
+            "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+        ).get_json()["success"]
+        is True
+    )
 
     # Precheck v2 and confirm with conflict_action=update -> replaces, same slug.
     resp2 = auth_client.post(
@@ -286,9 +292,12 @@ def test_install_confirm_new_slug_installs_separate_app(auth_client, app):
         content_type="multipart/form-data",
     )
     staging_id_1 = resp1.get_json()["staging_id"]
-    assert auth_client.post(
-        "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
-    ).get_json()["success"] is True
+    assert (
+        auth_client.post(
+            "/admin/apps/install-confirm", json={"staging_id": staging_id_1}
+        ).get_json()["success"]
+        is True
+    )
 
     # Precheck again, confirm with a different slug -> installs as a new app.
     resp2 = auth_client.post(

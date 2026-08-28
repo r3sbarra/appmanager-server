@@ -596,7 +596,9 @@ def stage_zip_file(
     return staging_id, scan_report, manifest
 
 
-def slug_conflict_info(slug: str, new_manifest: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def slug_conflict_info(
+    slug: str, new_manifest: Optional[Dict[str, Any]] = None
+) -> Optional[Dict[str, Any]]:
     """
     If an app with ``slug`` is already installed, returns a dict describing the
     conflict (existing app id/name/version vs the incoming manifest's version).
@@ -697,7 +699,10 @@ def finalize_staged_installation(
             from appmanager.hooks import trigger_hook
 
             trigger_hook(
-                "on_app_updated", app_id=existing_app.id, app_slug=existing_app.slug, update_type="install"
+                "on_app_updated",
+                app_id=existing_app.id,
+                app_slug=existing_app.slug,
+                update_type="install",
             )
         except Exception:
             pass

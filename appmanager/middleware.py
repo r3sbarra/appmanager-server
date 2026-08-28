@@ -301,9 +301,7 @@ class DynamicAppDispatcherMiddleware:
 
                 # Wrap the sub-app response to inject SEO metadata into HTML.
                 if seo_tags:
-                    return self._dispatch_with_seo(
-                        wsgi_callable, environ, start_response, seo_tags
-                    )
+                    return self._dispatch_with_seo(wsgi_callable, environ, start_response, seo_tags)
 
                 return wsgi_callable(environ, start_response)
 
@@ -437,9 +435,7 @@ class DynamicAppDispatcherMiddleware:
                 name_match = re.search(r'(?:name|property)="([^"]+)"', tag)
                 if name_match:
                     attr = name_match.group(1)
-                    if re.search(
-                        rf'(?:name|property)="{re.escape(attr)}"', html, re.IGNORECASE
-                    ):
+                    if re.search(rf'(?:name|property)="{re.escape(attr)}"', html, re.IGNORECASE):
                         continue
             elif marker == "title":
                 if re.search(r"<title[^>]*>", html, re.IGNORECASE):
@@ -448,7 +444,7 @@ class DynamicAppDispatcherMiddleware:
                 if re.search(r'<link[^>]*rel="canonical"', html, re.IGNORECASE):
                     continue
             elif marker == "script":
-                if re.search(r'<script[^>]*application/ld\+json', html, re.IGNORECASE):
+                if re.search(r"<script[^>]*application/ld\+json", html, re.IGNORECASE):
                     continue
             to_inject.append(tag)
         if not to_inject:

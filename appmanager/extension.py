@@ -219,9 +219,7 @@ class AppManager:
                 elif user.is_admin():
                     app_states[a.slug] = "launch"
                 else:
-                    perm = UserAppPermission.query.filter_by(
-                        user_id=user.id, app_id=a.id
-                    ).first()
+                    perm = UserAppPermission.query.filter_by(user_id=user.id, app_id=a.id).first()
                     app_states[a.slug] = "launch" if (perm and perm.can_access) else "permission"
 
             seo = build_portal_seo()
@@ -263,9 +261,7 @@ class AppManager:
                 is_active=True, has_web_ui=True, requires_auth=False
             ).all():
                 urls.append(f"{base}/apps/{a.slug}/")
-            urlset = "\n".join(
-                f"  <url><loc>{u}</loc></url>" for u in urls
-            )
+            urlset = "\n".join(f"  <url><loc>{u}</loc></url>" for u in urls)
             xml = (
                 '<?xml version="1.0" encoding="UTF-8"?>\n'
                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'

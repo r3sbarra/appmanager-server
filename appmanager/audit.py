@@ -60,4 +60,6 @@ def query_audit(
         q = q.filter_by(action=action)
     if actor_type:
         q = q.filter_by(actor_type=actor_type)
-    return q.order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
+    return (
+        q.order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
+    )

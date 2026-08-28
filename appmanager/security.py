@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import os
 import re
 import shutil
@@ -242,8 +243,6 @@ def extract_zip_safely(zip_path: str, target_dir: str) -> None:
                 shutil.copyfileobj(src, dst)
 
 
-import logging
-
 SENSITIVE_PATTERNS = [
     (r"(Bearer\s+)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
     (r"(token=)[A-Za-z0-9\-\._~\+\/]+=*", r"\1[REDACTED]"),
@@ -302,7 +301,8 @@ class SensitiveDataFilter(logging.Filter):
         if record.args:
             if isinstance(record.args, tuple):
                 record.args = tuple(
-                    redact_sensitive_data(arg) if isinstance(arg, str) else arg for arg in record.args
+                    redact_sensitive_data(arg) if isinstance(arg, str) else arg
+                    for arg in record.args
                 )
             elif isinstance(record.args, dict):
                 record.args = {

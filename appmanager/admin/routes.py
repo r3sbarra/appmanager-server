@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 
 from flask import (
     Blueprint,
@@ -19,10 +19,10 @@ from appmanager.admin.app_installer import (
     install_from_git,
     install_from_zip,
     sanitize_slug,
+    slug_conflict_info,
     stage_git_repo,
     stage_zip_file,
     stage_zip_replacement,
-    slug_conflict_info,
     uninstall_app,
     update_app_from_git,
 )
@@ -112,7 +112,9 @@ def dashboard():
 
     # --- Settings tab context ---
     host_settings = get_host_settings()
-    active_apps = InstalledApp.query.filter_by(is_active=True).order_by(InstalledApp.name.asc()).all()
+    active_apps = (
+        InstalledApp.query.filter_by(is_active=True).order_by(InstalledApp.name.asc()).all()
+    )
 
     # Deep-link support: ?tab=audit / ?tab=settings activates that tab on load.
     active_tab = request.args.get("tab") or ""
@@ -1242,9 +1244,7 @@ def settings_save():
         "seo_sitemap_enabled": request.form.get("seo_sitemap_enabled") == "on",
     }
     keywords_raw = request.form.get("seo_portal_keywords", "")
-    seo_updates["seo_portal_keywords"] = [
-        k.strip() for k in keywords_raw.split(",") if k.strip()
-    ]
+    seo_updates["seo_portal_keywords"] = [k.strip() for k in keywords_raw.split(",") if k.strip()]
 
     # --- Dashboard / Login section ---
     dashboard_updates = {

@@ -218,9 +218,7 @@ def test_seo_injection_noindex_for_auth_app(tmp_path):
 
         client = Client(disp, Response)
         # Authenticate as admin so the sub-app is actually dispatched.
-        res = client.get(
-            "/apps/authapp/", headers={"Authorization": f"Bearer {admin_token}"}
-        )
+        res = client.get("/apps/authapp/", headers={"Authorization": f"Bearer {admin_token}"})
         body = res.get_data(as_text=True)
         # Auth app forced to noindex,nofollow (seo_auth_apps_noindex default on)
         assert "noindex,nofollow" in body

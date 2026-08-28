@@ -15,7 +15,6 @@ Permission model (``app_db_permissions`` table):
 """
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -39,9 +38,7 @@ def _app_record(slug: str) -> Optional[InstalledApp]:
 
 
 def _permission(app_id: int, permission_type: str = "db") -> Optional[AppDbPermission]:
-    return AppDbPermission.query.filter_by(
-        app_id=app_id, permission_type=permission_type
-    ).first()
+    return AppDbPermission.query.filter_by(app_id=app_id, permission_type=permission_type).first()
 
 
 def _host_db_url() -> str:
@@ -167,9 +164,7 @@ def get_auth_context(slug: str, headers: Optional[Any] = None) -> Optional[Dict[
     user_name = None
     user_role = None
     if headers is not None:
-        user_id = headers.get("X-AppManager-User-Id") or headers.get(
-            "HTTP_X_APPMANAGER_USER_ID"
-        )
+        user_id = headers.get("X-AppManager-User-Id") or headers.get("HTTP_X_APPMANAGER_USER_ID")
         user_name = headers.get("X-AppManager-User-Name") or headers.get(
             "HTTP_X_APPMANAGER_USER_NAME"
         )
@@ -207,6 +202,7 @@ def get_auth_context(slug: str, headers: Optional[Any] = None) -> Optional[Dict[
 # ---------------------------------------------------------------------------
 # Permission lifecycle helpers (used by the installer and admin routes)
 # ---------------------------------------------------------------------------
+
 
 def ensure_permission_rows(app: InstalledApp, manifest: Dict[str, Any]) -> None:
     """
@@ -371,9 +367,7 @@ def cleanup_app_data(app_id: int, slug: str) -> None:
             prefix = f"app_{slug}_"
             with engine.connect() as conn:
                 rows = conn.execute(
-                    text(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE :p"
-                    ),
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE :p"),
                     {"p": f"{prefix}%"},
                 ).fetchall()
                 for (tname,) in rows:

@@ -89,9 +89,7 @@ def init_db(app):
                         )
                         conn.commit()
                     if "seo_json_ld" not in columns:
-                        conn.execute(
-                            text("ALTER TABLE installed_apps ADD COLUMN seo_json_ld TEXT")
-                        )
+                        conn.execute(text("ALTER TABLE installed_apps ADD COLUMN seo_json_ld TEXT"))
                         conn.commit()
 
                 # Ensure the app_db_permissions table exists (created by db.create_all()

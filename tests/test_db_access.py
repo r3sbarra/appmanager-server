@@ -2,7 +2,6 @@ import pytest
 
 from appmanager import create_app
 from appmanager.database import db
-from appmanager.models import AppDbPermission, InstalledApp, User
 from appmanager.db_access import (
     ensure_permission_rows,
     get_auth_context,
@@ -11,6 +10,7 @@ from appmanager.db_access import (
     grant_permission,
     revoke_permission,
 )
+from appmanager.models import AppDbPermission, InstalledApp, User
 
 
 @pytest.fixture
@@ -27,9 +27,7 @@ def test_app():
     with app.app_context():
         db.create_all()
         user = User(email="admin@example.com", role="admin")
-        app_rec = InstalledApp(
-            name="DB App", slug="db-app", source_type="zip", is_active=True
-        )
+        app_rec = InstalledApp(name="DB App", slug="db-app", source_type="zip", is_active=True)
         db.session.add_all([user, app_rec])
         db.session.commit()
         yield app
@@ -112,9 +110,7 @@ def test_revoke_permission(test_app):
 def test_auth_context_narrow_scope(test_app):
     with test_app.app_context():
         app_id = _app_id()
-        ensure_permission_rows(
-            InstalledApp.query.get(app_id), {"requests_auth_readonly": True}
-        )
+        ensure_permission_rows(InstalledApp.query.get(app_id), {"requests_auth_readonly": True})
         # Denied by default -> None.
         assert get_auth_context("db-app", {}) is None
 

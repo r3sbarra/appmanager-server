@@ -101,6 +101,7 @@ def get_app_settings(app_slug: str) -> Dict[str, Any]:
 # Shared database access + read-only auth context (re-exported from db_access)
 # ---------------------------------------------------------------------------
 
+
 def get_db_engine(app_slug: str):
     """Return a SQLAlchemy engine for the app's shared DB access, or None."""
     from appmanager.db_access import get_db_engine as _impl

@@ -246,8 +246,9 @@ def test_auth_rate_limiter():
 
 
 def test_sensitive_data_redaction():
-    from appmanager.security import SensitiveDataFilter, redact_sensitive_data
     import logging
+
+    from appmanager.security import SensitiveDataFilter, redact_sensitive_data
 
     raw_log = "User failed auth with Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.test and token=secret12345"
     sanitized = redact_sensitive_data(raw_log)
@@ -256,7 +257,9 @@ def test_sensitive_data_redaction():
 
     # Test SensitiveDataFilter
     filt = SensitiveDataFilter()
-    rec = logging.LogRecord("appmanager", logging.INFO, "path", 10, "Accessing token=super_secret_tok", (), None)
+    rec = logging.LogRecord(
+        "appmanager", logging.INFO, "path", 10, "Accessing token=super_secret_tok", (), None
+    )
     filt.filter(rec)
     assert "super_secret_tok" not in rec.msg
     assert "[REDACTED]" in rec.msg

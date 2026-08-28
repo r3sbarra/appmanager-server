@@ -297,7 +297,9 @@ class AppDbPermission(db.Model):
     app_id = db.Column(db.Integer, db.ForeignKey("installed_apps.id"), nullable=False, index=True)
     permission_type = db.Column(db.String(32), nullable=False, default="db")  # db | auth_readonly
     granted = db.Column(db.Boolean, default=False, nullable=False)
-    access_level = db.Column(db.String(16), default="scoped", nullable=False)  # scoped | full | denied
+    access_level = db.Column(
+        db.String(16), default="scoped", nullable=False
+    )  # scoped | full | denied
     table_prefix = db.Column(db.String(100), nullable=True)  # auto-assigned "app_<slug>_"
     granted_at = db.Column(db.DateTime, nullable=True)
     granted_by = db.Column(db.Integer, nullable=True)  # admin user id
