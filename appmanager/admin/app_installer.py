@@ -1,5 +1,6 @@
 import ast
 import importlib.util
+import inspect
 import json
 import os
 import shutil
@@ -267,15 +268,34 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
     sys.modules[scoped_module_name] = mod
     spec.loader.exec_module(mod)
 
-    # Check for Flask app instance or callable create_app factory
+    # Check for Flask app instance, callable create_app factory, or WSGI middleware
     if hasattr(mod, app_var_name):
         app_obj = getattr(mod, app_var_name)
-        if callable(app_obj) and not hasattr(app_obj, "wsgi_app"):
-            # Factory function e.g. create_app()
-            app_instance = app_obj()
-        else:
-            app_instance = app_obj
-        return app_instance
+        if hasattr(app_obj, "wsgi_app"):
+            return app_obj
+
+        if callable(app_obj):
+            if inspect.isfunction(app_obj) or inspect.ismethod(app_obj):
+                try:
+                    sig = inspect.signature(app_obj)
+                    params = list(sig.parameters.values())
+                    # Standard WSGI callable: (environ, start_response)
+                    if len(params) == 2 and params[0].name in ("environ", "env"):
+                        return app_obj
+                    required_params = [
+                        p
+                        for p in params
+                        if p.default == inspect.Parameter.empty
+                        and p.kind
+                        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                    ]
+                    if len(required_params) == 0:
+                        return app_obj()
+                except Exception:
+                    pass
+            return app_obj
+
+        return app_obj
 
     raise AttributeError(f"Module '{module_name}' in {app_dir} does not export '{app_var_name}'")
 
