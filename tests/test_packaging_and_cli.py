@@ -12,7 +12,7 @@ from appmanager.cli import main
 
 
 def test_package_exports():
-    assert __version__ == "0.3.1"
+    assert __version__ == "0.4.0"
     assert callable(create_app)
     assert callable(create_dispatchable_app)
     assert DynamicAppDispatcherMiddleware is not None
@@ -25,7 +25,7 @@ def test_cli_version(capsys):
         main(["--version"])
     assert exc.value.code == 0
     captured = capsys.readouterr()
-    assert "0.3.1" in captured.out or "0.3.1" in captured.err
+    assert __version__ in captured.out or __version__ in captured.err
 
 
 def test_cli_help(capsys):
