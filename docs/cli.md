@@ -178,25 +178,76 @@ appmanager list-apps
 
 ---
 
-## User & Role Management
+---
 
-### `appmanager make-admin <email>`
-Direct shortcut to elevate a user account to `admin` status.
+## App Installation, Updates & Dependency Management
+
+### `appmanager install-git <url>`
+Installs a sub-application from a remote Git repository with automated AST security pre-checks and dependency validation.
 
 ```bash
-appmanager make-admin admin@example.com
+appmanager install-git https://github.com/user/my-app.git --name "My App" --slug my-app -y
+```
+
+**Options**:
+- `--name <name>`: Human-readable app name
+- `--slug <slug>`: URL slug
+- `--entry-point <module:attr>`: Entry point string (default: `app:app`)
+- `-y, --yes`: Skip interactive confirmation prompt
+
+---
+
+### `appmanager install-zip <path>`
+Installs a sub-application from a local `.zip` package with automated AST security auditing.
+
+```bash
+appmanager install-zip ./package.zip --name "Widget App" -y
 ```
 
 ---
 
-### `appmanager set-role <email> [--role admin|user]`
-Updates a user account's access level to `admin` or `user`.
+### `appmanager update <slug>`
+Updates an installed sub-application in-place. For Git apps, it executes a `git pull`, audits code changes, and updates dependencies. For ZIP apps, pass `--zip <path>` to apply a replacement package.
 
 ```bash
-appmanager set-role dev@example.com --role admin
+# Update Git sub-app:
+appmanager update analytics
+
+# Upgrade ZIP sub-app:
+appmanager update widget-app --zip ./widget-app-v2.zip
 ```
 
 ---
+
+### `appmanager check-deps [slug] [--all] [--install]`
+Inspects Python runtime compatibility, PEP 508 package requirements, and conflict detection across sub-apps.
+
+```bash
+# Inspect all sub-apps:
+appmanager check-deps --all
+# or:
+appmanager check-deps all
+
+# Inspect specific sub-app:
+appmanager check-deps analytics
+
+# Inspect and automatically install missing requirements:
+appmanager check-deps --all --install
+```
+
+---
+
+### `appmanager install-deps [slug] [--all]`
+Installs required packages declared in sub-app `requirements.txt` into the configured environment (`singular` shared venv or `isolated` per-app `.venv`).
+
+```bash
+# Install dependencies for all apps:
+appmanager install-deps --all
+
+# Install for single app:
+appmanager install-deps analytics
+```
+
 
 ### `appmanager list-users`
 Lists all registered users in the database, including their email, assigned role, activity status, and online presence.

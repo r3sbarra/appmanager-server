@@ -63,6 +63,14 @@ class Config:
         e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()
     ]
 
+    # Virtual environment & sub-app execution mode ('singular' [default] or 'isolated')
+    APP_VENV_MODE = os.getenv("APP_VENV_MODE", "singular").strip().lower()
+    ALLOW_ISOLATED_APP_VENVS = os.getenv("ALLOW_ISOLATED_APP_VENVS", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
     # Security settings
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")

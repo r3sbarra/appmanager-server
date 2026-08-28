@@ -15,6 +15,12 @@ from flask import current_app
 from werkzeug.utils import secure_filename
 
 from appmanager.database import db
+from appmanager.dependency_manager import (
+    DependencyAnalysisReport,
+    analyze_dependencies,
+    analyze_uninstall_dependencies,
+    install_app_dependencies,
+)
 from appmanager.models import InstalledApp, User, UserAppPermission
 from appmanager.security import (
     extract_zip_safely,
@@ -22,7 +28,7 @@ from appmanager.security import (
     validate_entrypoint_path,
 )
 from appmanager.security_scanner import SecurityScanReport, run_security_scan
-from appmanager.signals import subapp_installed, subapp_uninstalled
+from appmanager.signals import subapp_installed, subapp_reloaded, subapp_uninstalled, subapp_updated
 
 
 def sanitize_slug(slug_text: str) -> str:
@@ -228,15 +234,18 @@ def discover_entrypoint(app_dir: str) -> str:
     return "app:app"
 
 
-def install_dependencies(app_dir: str) -> None:
-    req_file = os.path.join(app_dir, "requirements.txt")
-    if os.path.exists(req_file):
-        try:
-            print(f"[INSTALLER] Installing dependencies for sub-app at {app_dir}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_file])
-            print("[INSTALLER] Sub-app dependencies installed successfully.")
-        except Exception as e:
-            print(f"[INSTALLER WARNING] Failed to install requirements.txt: {e}")
+def install_dependencies(app_dir: str) -> Tuple[bool, str]:
+    """
+    Installs sub-app dependencies using the configured virtual environment mode (singular or isolated).
+    """
+    venv_mode = "singular"
+    if current_app:
+        venv_mode = current_app.config.get("APP_VENV_MODE", "singular")
+
+    ok, msg = install_app_dependencies(app_dir, venv_mode=venv_mode)
+    if not ok:
+        print(f"[INSTALLER WARNING] {msg}")
+    return ok, msg
 
 
 def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
@@ -287,7 +296,10 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
                         for p in params
                         if p.default == inspect.Parameter.empty
                         and p.kind
-                        in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                        in (
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        )
                     ]
                     if len(required_params) == 0:
                         return app_obj()
@@ -309,10 +321,14 @@ def _write_staging_metadata(staging_dir: str, meta: Dict[str, Any]) -> None:
     """Saves staging session metadata to disk inside the sandboxed staging directory."""
     meta_path = os.path.join(staging_dir, "_staging_meta.json")
     try:
-        # Don't serialize scan_report object directly to JSON if it's an object
+        # Don't serialize scan_report / dependency_report object directly to JSON if it's an object
         serializable = dict(meta)
         if "scan_report" in serializable and hasattr(serializable["scan_report"], "to_dict"):
             serializable["scan_report"] = serializable["scan_report"].to_dict()
+        if "dependency_report" in serializable and hasattr(
+            serializable["dependency_report"], "to_dict"
+        ):
+            serializable["dependency_report"] = serializable["dependency_report"].to_dict()
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(serializable, f)
     except Exception as e:
@@ -437,6 +453,10 @@ def stage_git_repo(
     # Run static security pre-check
     scan_report = run_security_scan(temp_stage_dir)
 
+    # Run dependency analysis
+    venv_mode = current_app.config.get("APP_VENV_MODE", "singular") if current_app else "singular"
+    dep_report = analyze_dependencies(temp_stage_dir, manifest=manifest, venv_mode=venv_mode)
+
     _staged_installations[staging_id] = {
         "staging_id": staging_id,
         "staging_dir": temp_stage_dir,
@@ -447,6 +467,7 @@ def stage_git_repo(
         "entry_point": resolved_entry_point,
         "manifest": manifest,
         "scan_report": scan_report,
+        "dependency_report": dep_report,
         "created_at": time.time(),
     }
     _write_staging_metadata(temp_stage_dir, _staged_installations[staging_id])
@@ -514,6 +535,10 @@ def stage_zip_file(
     # Run static security pre-check
     scan_report = run_security_scan(temp_stage_dir)
 
+    # Run dependency analysis
+    venv_mode = current_app.config.get("APP_VENV_MODE", "singular") if current_app else "singular"
+    dep_report = analyze_dependencies(temp_stage_dir, manifest=manifest, venv_mode=venv_mode)
+
     _staged_installations[staging_id] = {
         "staging_id": staging_id,
         "staging_dir": temp_stage_dir,
@@ -524,6 +549,7 @@ def stage_zip_file(
         "entry_point": resolved_entry_point,
         "manifest": manifest,
         "scan_report": scan_report,
+        "dependency_report": dep_report,
         "created_at": time.time(),
     }
     _write_staging_metadata(temp_stage_dir, _staged_installations[staging_id])
@@ -727,13 +753,267 @@ def export_app_to_zip(slug: str, output_path: Optional[str] = None) -> str:
     return output_path
 
 
+def update_app_from_git(app_id_or_slug: Any) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Pulls latest commits from remote Git repository for an installed app, executes
+    AST security pre-check audit on updated files, updates dependencies, and reloads WSGI cache.
+    """
+    if isinstance(app_id_or_slug, int) or (
+        isinstance(app_id_or_slug, str) and app_id_or_slug.isdigit()
+    ):
+        app_record = db.session.get(InstalledApp, int(app_id_or_slug))
+    else:
+        app_record = InstalledApp.query.filter_by(slug=str(app_id_or_slug)).first()
+
+    if not app_record:
+        return False, "Application not found in database.", {}
+
+    slug = app_record.slug
+    app_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], slug)
+
+    if not os.path.exists(app_dir):
+        return False, f"App directory for '{app_record.name}' does not exist on disk.", {}
+
+    git_dir = os.path.join(app_dir, ".git")
+    if not os.path.exists(git_dir):
+        return (
+            False,
+            f"'{app_record.name}' was not installed via Git (no .git directory found).",
+            {},
+        )
+
+    # 1. Fetch and pull changes
+    try:
+        # Fetch remote refs
+        fetch_res = subprocess.run(
+            ["git", "fetch", "origin"],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if fetch_res.returncode != 0:
+            return False, f"Git fetch failed: {fetch_res.stderr.strip()}", {}
+
+        # Reset / pull to origin HEAD
+        pull_res = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if pull_res.returncode != 0:
+            # Fallback to merge or pull origin HEAD
+            pull_res = subprocess.run(
+                ["git", "pull", "origin", "HEAD"],
+                cwd=app_dir,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if pull_res.returncode != 0:
+                return False, f"Git pull failed: {pull_res.stderr.strip()}", {}
+
+    except Exception as git_err:
+        return False, f"Git operation error: {str(git_err)}", {}
+
+    # 2. Run AST Security Scan on updated repository
+    scan_report = run_security_scan(app_dir)
+    if not scan_report.is_safe:
+        return (
+            False,
+            f"Security scan failed on updated code: {scan_report.summary}",
+            {"scan_report": scan_report.to_dict()},
+        )
+
+    # 3. Analyze and install dependencies
+    venv_mode = current_app.config.get("APP_VENV_MODE", "singular") if current_app else "singular"
+    manifest = parse_manifest(app_dir) or {}
+    dep_report = analyze_dependencies(app_dir, manifest=manifest, venv_mode=venv_mode)
+
+    dep_ok, dep_msg = install_dependencies(app_dir)
+
+    # 4. Update InstalledApp metadata
+    if manifest:
+        if manifest.get("name"):
+            app_record.name = manifest["name"]
+        if manifest.get("description"):
+            app_record.description = manifest["description"]
+        if manifest.get("entry_point"):
+            app_record.entry_point = manifest["entry_point"]
+
+    db.session.commit()
+
+    # 5. Clear WSGI cache and trigger signals
+    if hasattr(current_app, "extensions") and "appmanager" in current_app.extensions:
+        current_app.extensions["appmanager"].clear_cache(slug=slug)
+
+    try:
+        subapp_reloaded.send(None, slug=slug)
+        subapp_updated.send(None, app_slug=slug, app_id=app_record.id, update_type="git")
+    except Exception:
+        pass
+
+    try:
+        from appmanager.hooks import trigger_hook
+
+        trigger_hook("on_app_updated", app_id=app_record.id, app_slug=slug, update_type="git")
+    except Exception:
+        pass
+
+    return (
+        True,
+        f"Application '{app_record.name}' updated successfully from Git.",
+        {
+            "scan_report": scan_report.to_dict(),
+            "dependency_report": dep_report.to_dict(),
+            "dep_output": dep_msg,
+            "manifest": manifest,
+        },
+    )
+
+
+def stage_zip_replacement(
+    app_id_or_slug: Any,
+    zip_file_storage: Any,
+) -> Tuple[str, SecurityScanReport, Dict[str, Any], DependencyAnalysisReport]:
+    """
+    Stages an uploaded ZIP file for replacing an existing installed application.
+    """
+    if isinstance(app_id_or_slug, int) or (
+        isinstance(app_id_or_slug, str) and app_id_or_slug.isdigit()
+    ):
+        app_record = db.session.get(InstalledApp, int(app_id_or_slug))
+    else:
+        app_record = InstalledApp.query.filter_by(slug=str(app_id_or_slug)).first()
+
+    if not app_record:
+        raise ValueError("Target application to replace was not found.")
+
+    staging_id, scan_report, manifest = stage_zip_file(
+        zip_file_storage=zip_file_storage,
+        name=app_record.name,
+        slug=app_record.slug,
+        entry_point=app_record.entry_point,
+    )
+
+    session = _staged_installations[staging_id]
+    session["action"] = "replace"
+    session["target_app_id"] = app_record.id
+    _write_staging_metadata(session["staging_dir"], session)
+
+    dep_report = session["dependency_report"]
+    return staging_id, scan_report, manifest, dep_report
+
+
+def finalize_zip_replacement(staging_id: str) -> InstalledApp:
+    """
+    Finalizes replacing an existing app's files with newly staged ZIP archive contents.
+    """
+    session = get_staged_session(staging_id)
+    if not session:
+        raise ValueError(f"Staged session '{staging_id}' not found or expired.")
+
+    _staged_installations.pop(staging_id, None)
+
+    staging_dir = session["staging_dir"]
+    target_app_id = session.get("target_app_id")
+    target_slug = session.get("slug")
+
+    if target_app_id:
+        app_record = db.session.get(InstalledApp, target_app_id)
+    else:
+        app_record = InstalledApp.query.filter_by(slug=target_slug).first()
+
+    if not app_record:
+        if os.path.exists(staging_dir):
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        raise ValueError("Target app to replace was not found.")
+
+    target_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], app_record.slug)
+
+    # Atomically replace target directory
+    temp_backup_dir = None
+    try:
+        import tempfile
+
+        if os.path.exists(target_dir):
+            temp_backup_dir = tempfile.mkdtemp(prefix="app_backup_")
+            # Move existing app out
+            for item in os.listdir(target_dir):
+                s = os.path.join(target_dir, item)
+                d = os.path.join(temp_backup_dir, item)
+                shutil.move(s, d)
+
+        # Move new staged files in
+        meta_path = os.path.join(staging_dir, "_staging_meta.json")
+        if os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+            except Exception:
+                pass
+
+        for item in os.listdir(staging_dir):
+            s = os.path.join(staging_dir, item)
+            d = os.path.join(target_dir, item)
+            shutil.move(s, d)
+
+        if os.path.exists(staging_dir):
+            shutil.rmtree(staging_dir, ignore_errors=True)
+
+        if temp_backup_dir and os.path.exists(temp_backup_dir):
+            shutil.rmtree(temp_backup_dir, ignore_errors=True)
+
+    except Exception as e:
+        if temp_backup_dir and os.path.exists(temp_backup_dir) and os.path.exists(target_dir):
+            # Restore backup on failure
+            shutil.rmtree(target_dir, ignore_errors=True)
+            os.makedirs(target_dir, exist_ok=True)
+            for item in os.listdir(temp_backup_dir):
+                shutil.move(os.path.join(temp_backup_dir, item), os.path.join(target_dir, item))
+            shutil.rmtree(temp_backup_dir, ignore_errors=True)
+        raise RuntimeError(f"Failed to replace application files: {e}")
+
+    # Update dependencies and manifest
+    install_dependencies(target_dir)
+
+    manifest = parse_manifest(target_dir) or {}
+    if manifest:
+        if manifest.get("name"):
+            app_record.name = manifest["name"]
+        if manifest.get("description"):
+            app_record.description = manifest["description"]
+        if manifest.get("entry_point"):
+            app_record.entry_point = manifest["entry_point"]
+
+    db.session.commit()
+
+    # Clear cache and trigger reload
+    if hasattr(current_app, "extensions") and "appmanager" in current_app.extensions:
+        current_app.extensions["appmanager"].clear_cache(slug=app_record.slug)
+
+    try:
+        subapp_reloaded.send(None, slug=app_record.slug)
+        subapp_updated.send(None, app_slug=app_record.slug, app_id=app_record.id, update_type="zip")
+    except Exception:
+        pass
+
+    return app_record
+
+
 def uninstall_app(app_id: int) -> Tuple[bool, str]:
     app_record = db.session.get(InstalledApp, app_id)
     if not app_record:
         return False, "App not found."
 
     slug = app_record.slug
-    target_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], slug)
+    installed_apps_dir = current_app.config["INSTALLED_APPS_DIR"]
+    target_dir = os.path.join(installed_apps_dir, slug)
+
+    # 1. Analyze dependencies to preserve shared packages
+    dep_summary = analyze_uninstall_dependencies(slug, installed_apps_dir)
+
     if os.path.exists(target_dir):
         shutil.rmtree(target_dir, ignore_errors=True)
 
@@ -756,4 +1036,7 @@ def uninstall_app(app_id: int) -> Tuple[bool, str]:
     except Exception:
         pass
 
-    return True, "App uninstalled successfully."
+    preserved_msg = (
+        f" ({dep_summary['message']})" if dep_summary.get("shared_packages_preserved") else ""
+    )
+    return True, f"Application '{app_record.name}' uninstalled successfully.{preserved_msg}"

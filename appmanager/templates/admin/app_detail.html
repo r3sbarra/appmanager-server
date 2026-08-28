@@ -17,25 +17,165 @@
             <a href="/admin" class="admin-nav-link" data-tab="apps">← Back to Admin</a>
         </div>
         <div class="admin-nav-group">
+            <div class="admin-nav-group-title">MAINTENANCE</div>
+            <a href="#panel-maintenance" class="admin-nav-link" data-panel="maintenance">Updates &amp; Package</a>
+            <a href="#panel-dependencies" class="admin-nav-link" data-panel="dependencies">Dependencies</a>
+        </div>
+        <div class="admin-nav-group">
             <div class="admin-nav-group-title">APP PANELS</div>
             {% for p in panels %}
                 <a href="#panel-{{ p.panel_id }}" class="admin-nav-link" data-panel="{{ p.panel_id }}">{{ p.label }}</a>
             {% else %}
-                <div class="text-faint" style="font-size:0.8rem; padding:0.5rem 0.75rem;">No panels declared</div>
+                <div class="text-faint" style="font-size:0.8rem; padding:0.5rem 0.75rem;">No custom panels</div>
             {% endfor %}
         </div>
     </aside>
 
     <div class="admin-content">
-        {% if not panels and not schema %}
-            <div class="card">
-                <div class="empty-state">
-                    <h2>No admin panels declared</h2>
-                    <p>This app's manifest does not declare any <code>admin_sections</code> or <code>settings_schema</code>.</p>
-                    <p class="text-faint mono" style="font-size:0.75rem;">Add them to <code>manifest.json</code> and reinstall to enable per-app admin settings.</p>
+        <!-- ============ MAINTENANCE PANEL ============ -->
+        <section class="tab-panel app-panel" id="panel-maintenance">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Package Maintenance &amp; Updates</h2>
+                    <span class="badge {% if app.source_type == 'git' %}badge-accent{% else %}badge-primary{% endif %} mono">{{ app.source_type|upper }}</span>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-2 mb-3">
+                        <div>
+                            <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Installation Source</div>
+                            <div style="font-weight:600; margin-top:2px;">{{ app.source_type|upper }}</div>
+                            <div class="text-faint mono" style="font-size:0.75rem;">{{ app.source_url or 'Local ZIP' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-muted mono" style="font-size:0.75rem; text-transform:uppercase;">Runtime Environment</div>
+                            <div style="font-weight:600; margin-top:2px;">Python {{ dep_report.python_version_current if dep_report else '3.x' }}</div>
+                            <div class="text-faint mono" style="font-size:0.75rem;">Mode: {{ config.get('APP_VENV_MODE', 'singular') }}</div>
+                        </div>
+                    </div>
+
+                    {% if app.source_type == 'git' %}
+                        <div class="card p-3 mb-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                            <h4 class="mb-1" style="font-size:0.95rem;">One-Click Git Update</h4>
+                            <p class="text-muted mb-3" style="font-size:0.85rem;">
+                                Pulls latest commits from the remote repository, executes an automated AST security scan, verifies and updates dependencies, and reloads the WSGI cache.
+                            </p>
+                            <form action="/admin/apps/{{ app.id }}/update-git" method="POST" onsubmit="return confirm('Pull latest Git changes and reload {{ app.name }}?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-primary">↻ Pull Latest Changes from Git</button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <div class="card p-3 mb-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                            <h4 class="mb-1" style="font-size:0.95rem;">Upgrade via Replacement ZIP</h4>
+                            <p class="text-muted mb-3" style="font-size:0.85rem;">
+                                Upload a new ZIP package to replace this application's files. An automated security audit and dependency check will be executed before applying.
+                            </p>
+                            <form action="/admin/apps/{{ app.id }}/precheck-replace-zip" method="POST" enctype="multipart/form-data">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="form-group mb-3">
+                                    <input type="file" name="zip_file" class="form-input" accept=".zip" required>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Pre-Check &amp; Upgrade Package</button>
+                            </form>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
-        {% endif %}
+        </section>
+
+        <!-- ============ DEPENDENCIES PANEL ============ -->
+        <section class="tab-panel app-panel" id="panel-dependencies">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title mb-0">Dependency Inspector &amp; Runtime Compatibility</h2>
+                    <span class="badge badge-outline mono">{{ config.get('APP_VENV_MODE', 'singular') }}</span>
+                </div>
+                <div class="card-body">
+                    {% if dep_report %}
+                        <div class="grid grid-2 mb-3">
+                            <div class="card p-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                                <div class="text-muted mono" style="font-size:0.75rem;">PYTHON VERSION</div>
+                                <div style="font-weight:600; font-size:1rem; margin-top:2px;">Python {{ dep_report.python_version_current }}</div>
+                                <div class="mt-1">
+                                    {% if dep_report.python_version_ok %}
+                                        <span class="badge badge-success">Compatible</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">Mismatch</span>
+                                    {% endif %}
+                                    <span class="text-faint mono" style="font-size:0.75rem;">(Req: {{ dep_report.python_version_required or 'Any' }})</span>
+                                </div>
+                            </div>
+                            <div class="card p-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                                <div class="text-muted mono" style="font-size:0.75rem;">ENVIRONMENT MODE</div>
+                                <div style="font-weight:600; font-size:1rem; margin-top:2px;">
+                                    {% if dep_report.venv_mode == 'singular' %}Single Shared Environment{% else %}Isolated Virtual Environment{% endif %}
+                                </div>
+                                <div class="mt-1">
+                                    {% if dep_report.conflicts %}
+                                        <span class="badge badge-danger">{{ dep_report.conflicts|length }} Conflicts</span>
+                                    {% else %}
+                                        <span class="badge badge-success">No Conflicts</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if dep_report.conflicts %}
+                            <div class="alert alert-danger mb-3">
+                                <strong>Dependency Conflicts:</strong>
+                                <ul style="margin:4px 0 0 16px; padding:0;">
+                                    {% for c in dep_report.conflicts %}
+                                        <li>{{ c }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+
+                        {% if dep_report.items %}
+                            <div class="table-wrap">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Package Name</th>
+                                            <th>Declared Specifier</th>
+                                            <th>Installed Version</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in dep_report.items %}
+                                            <tr>
+                                                <td><strong>{{ item.name }}</strong></td>
+                                                <td class="mono">{{ item.specifier or 'any' }}</td>
+                                                <td class="mono">{{ item.installed_version or '—' }}</td>
+                                                <td>
+                                                    {% if item.status == 'satisfied' %}
+                                                        <span class="badge badge-success">Satisfied</span>
+                                                    {% elif item.status == 'to_install' %}
+                                                        <span class="badge badge-info">To Install</span>
+                                                    {% else %}
+                                                        <span class="badge badge-danger">Conflict</span>
+                                                    {% endif %}
+                                                    <span class="text-faint" style="font-size:0.75rem; margin-left:4px;">{{ item.message or '' }}</span>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="empty-state p-4">
+                                <p class="text-muted mono mb-0">No requirements.txt declared for this sub-application. Using host environment packages.</p>
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="empty-state p-4">
+                            <p class="text-muted mono mb-0">No dependency analysis available.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
 
         {% for item in rendered %}
             <section class="tab-panel app-panel" id="panel-{{ item.panel.panel_id }}">

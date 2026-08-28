@@ -1,4 +1,3 @@
-import os
 import pytest
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
@@ -57,14 +56,16 @@ app = make_child_app()
 
     # 3. Setup parent AppManager instance
     parent_db_path = tmp_path / "parent.db"
-    parent_app = create_app({
-        "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{parent_db_path}",
-        "SECRET_KEY": "parent-secret-key-32-bytes-long!",
-        "JWT_SECRET": "parent-jwt-secret-32-bytes-long!",
-        "INSTALLED_APPS_DIR": str(parent_apps_dir),
-        "ALLOW_DEV_MAGIC_LOGIN": True,
-    })
+    parent_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{parent_db_path}",
+            "SECRET_KEY": "parent-secret-key-32-bytes-long!",
+            "JWT_SECRET": "parent-jwt-secret-32-bytes-long!",
+            "INSTALLED_APPS_DIR": str(parent_apps_dir),
+            "ALLOW_DEV_MAGIC_LOGIN": True,
+        }
+    )
 
     with parent_app.app_context():
         db.create_all()

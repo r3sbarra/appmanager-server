@@ -75,3 +75,38 @@ def test_cli_no_args(capsys):
     assert ret == 0
     captured = capsys.readouterr()
     assert "usage:" in captured.out
+
+
+def test_cli_check_deps_and_install_deps(capsys, monkeypatch, tmp_path):
+    test_db = tmp_path / "test.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{test_db}")
+    monkeypatch.setenv("APPMANAGER_BASE_DIR", str(tmp_path))
+
+    # Seed first
+    main(["seed"])
+    capsys.readouterr()
+
+    # 1. check-deps with no args
+    ret = main(["check-deps"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Dependency Inspector" in captured.out
+    assert "sample-counter" in captured.out
+
+    # 2. check-deps with 'all'
+    ret = main(["check-deps", "all"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Dependency Inspector" in captured.out
+
+    # 3. check-deps with --all --install
+    ret = main(["check-deps", "--all", "--install"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Dependency Installer" in captured.out
+
+    # 4. install-deps with --all
+    ret = main(["install-deps", "--all"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Dependency Installer" in captured.out

@@ -1,18 +1,24 @@
 import argparse
 import json
 import os
+import platform
 import sys
 from datetime import datetime, timezone
+from typing import Optional
 
 from appmanager import __version__, create_app, create_dispatchable_app
 from appmanager.admin.app_installer import (
     export_app_to_zip,
+    finalize_zip_replacement,
     load_wsgi_app_from_path,
     parse_manifest,
     sanitize_slug,
+    stage_zip_replacement,
+    update_app_from_git,
     validate_subapp_package,
 )
 from appmanager.database import db
+from appmanager.dependency_manager import analyze_dependencies, install_app_dependencies
 from appmanager.health import check_all_apps_health
 from appmanager.models import AppHealthLog, InstalledApp, MagicLinkToken, Role, User
 
@@ -914,6 +920,123 @@ def reload_subapp_cli(slug: str, app=None) -> int:
     return 0
 
 
+def update_subapp_cli(slug: str, zip_path: Optional[str] = None) -> int:
+    """
+    Updates an installed sub-app (Git pull or ZIP replacement) via CLI with security and dependency checks.
+    """
+    app = create_app()
+    with app.app_context():
+        app_record = InstalledApp.query.filter_by(slug=slug).first()
+        if not app_record:
+            print(f"❌ Error: App with slug '{slug}' is not installed.\n")
+            return 1
+
+        if zip_path:
+            if not os.path.exists(zip_path):
+                print(f"❌ Error: ZIP file not found at {zip_path}\n")
+                return 1
+            print(f"📦 Staging ZIP replacement for '{app_record.name}' from {zip_path}...")
+            with open(zip_path, "rb") as f:
+                staging_id, scan_report, manifest, dep_report = stage_zip_replacement(
+                    app_record.id, f
+                )
+            print(f"🛡️  Security Pre-Check Risk: {scan_report.risk_level}")
+            if not scan_report.is_safe:
+                print(f"❌ Security pre-check blocked update: {scan_report.summary}\n")
+                return 1
+            finalize_zip_replacement(staging_id)
+            print(f"✅ App '{app_record.name}' upgraded successfully via ZIP replacement.\n")
+            return 0
+        else:
+            if app_record.source_type != "git":
+                print(
+                    f"ℹ️  App '{app_record.name}' was installed via {app_record.source_type}. Pass --zip <file.zip> to upgrade.\n"
+                )
+                return 1
+            print(f"🔄 Pulling latest Git changes for '{app_record.name}'...")
+            ok, msg, details = update_app_from_git(app_record.id)
+            if ok:
+                print(f"✅ {msg}\n")
+                return 0
+            else:
+                print(f"❌ Update failed: {msg}\n")
+                return 1
+
+
+def check_deps_cli(
+    slug: Optional[str] = None, check_all: bool = False, install: bool = False
+) -> int:
+    """
+    Inspects dependency health, Python version compatibility, and conflicts across installed sub-apps.
+    If install is True, automatically installs missing dependencies into the appropriate environment.
+    """
+    app = create_app()
+    with app.app_context():
+        venv_mode = app.config.get("APP_VENV_MODE", "singular")
+        installed_apps_dir = app.config["INSTALLED_APPS_DIR"]
+        action_title = "Dependency Installer" if install else "Dependency Inspector"
+        print(f"\n🔍 AppManager {action_title} (Venv Mode: {venv_mode.upper()})")
+        print(f"   Host Python Runtime: Python {platform.python_version()} ({sys.executable})\n")
+
+        query = InstalledApp.query
+        if slug and slug.lower() != "all" and not check_all:
+            query = query.filter_by(slug=slug)
+        apps = query.all()
+
+        if not apps:
+            print("No matching installed applications found.\n")
+            return 0
+
+        has_failure = False
+        for app_rec in apps:
+            app_dir = os.path.join(installed_apps_dir, app_rec.slug)
+            manifest = parse_manifest(app_dir) or {}
+            dep_report = analyze_dependencies(app_dir, manifest=manifest, venv_mode=venv_mode)
+
+            py_status = "✅ COMPATIBLE" if dep_report.python_version_ok else "❌ MISMATCH"
+            print(
+                f"📱 App: {app_rec.name} ({app_rec.slug}) — Python Req: {dep_report.python_version_required or 'Any'} [{py_status}]"
+            )
+
+            if dep_report.conflicts:
+                print("   ⚠️  Conflicts:")
+                for c in dep_report.conflicts:
+                    print(f"      - {c}")
+
+            if dep_report.items:
+                print("   📦 Dependencies:")
+                for it in dep_report.items:
+                    print(
+                        f"      - {it.name:20} req: {it.specifier:12} installed: {it.installed_version or 'none':10} [{it.status.upper()}]"
+                    )
+            else:
+                print("   ℹ️  No requirements.txt declared (uses base environment).")
+
+            if install:
+                req_path = os.path.join(app_dir, "requirements.txt")
+                if os.path.exists(req_path):
+                    print(f"   ⚡ Installing dependencies for '{app_rec.name}'...")
+                    ok, msg = install_app_dependencies(app_dir, venv_mode=venv_mode)
+                    if ok:
+                        print(f"   ✅ {msg}")
+                    else:
+                        print(f"   ❌ Error: {msg}")
+                        has_failure = True
+                else:
+                    print("   ℹ️  No requirements.txt found. Nothing to install.")
+
+            print()
+
+        return 1 if has_failure else 0
+
+
+def install_deps_cli(slug: Optional[str] = None, install_all: bool = False) -> int:
+    """
+    Installs missing dependencies for one or all sub-apps.
+    """
+    return check_deps_cli(slug=slug, check_all=install_all, install=True)
+
+
 def run_server(host="0.0.0.0", port=5000, reload=True):
     """
     Starts the WSGI Dynamic Dispatcher local development server.
@@ -1082,6 +1205,46 @@ def main(args=None):
         "-y", "--yes", action="store_true", help="Skip confirmation prompt and install directly"
     )
 
+    # update command (One-Click Git pull or ZIP replacement)
+    update_parser = subparsers.add_parser(
+        "update", help="Update an installed sub-app (Git pull or ZIP replacement)"
+    )
+    update_parser.add_argument("slug", help="Slug of the application to update")
+    update_parser.add_argument("--zip", dest="zip_path", help="Path to replacement ZIP archive")
+
+    # check-deps command (Dependency Inspector & Installer)
+    deps_parser = subparsers.add_parser(
+        "check-deps", help="Inspect dependency health, Python version compatibility, and conflicts"
+    )
+    deps_parser.add_argument(
+        "slug", nargs="?", help="Optional slug of specific sub-app to inspect (or 'all')"
+    )
+    deps_parser.add_argument(
+        "--all", "-a", action="store_true", help="Inspect dependencies for all installed sub-apps"
+    )
+    deps_parser.add_argument(
+        "--install",
+        "-i",
+        action="store_true",
+        help="Automatically install missing dependencies for inspected apps",
+    )
+
+    # install-deps command (Direct Dependency Installer)
+    inst_deps_parser = subparsers.add_parser(
+        "install-deps", help="Install required dependencies for installed sub-apps"
+    )
+    inst_deps_parser.add_argument(
+        "slug",
+        nargs="?",
+        help="Slug of specific sub-app to install (or omit/use --all for all apps)",
+    )
+    inst_deps_parser.add_argument(
+        "--all",
+        "-a",
+        action="store_true",
+        help="Install dependencies across all installed sub-apps",
+    )
+
     # generate-manifest command (delegates to appmanager-sdk)
     gen_man_parser = subparsers.add_parser(
         "generate-manifest", help="Generate manifest.json from a Python sub-app"
@@ -1146,6 +1309,12 @@ def main(args=None):
             entry_point=parsed.entry_point,
             yes=parsed.yes,
         )
+    elif parsed.command == "update":
+        return update_subapp_cli(slug=parsed.slug, zip_path=parsed.zip_path)
+    elif parsed.command == "check-deps":
+        return check_deps_cli(slug=parsed.slug, check_all=parsed.all, install=parsed.install)
+    elif parsed.command == "install-deps":
+        return install_deps_cli(slug=parsed.slug, install_all=parsed.all)
     elif parsed.command == "export-app":
         return export_subapp_cli(slug=parsed.slug, output=parsed.output)
     elif parsed.command == "reload-app":

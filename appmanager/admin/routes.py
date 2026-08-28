@@ -1,3 +1,5 @@
+import os
+
 from flask import (
     Blueprint,
     current_app,
@@ -12,12 +14,15 @@ from flask import (
 from appmanager.admin.app_installer import (
     cancel_staged_app,
     finalize_staged_installation,
+    finalize_zip_replacement,
     install_from_git,
     install_from_zip,
     sanitize_slug,
     stage_git_repo,
     stage_zip_file,
+    stage_zip_replacement,
     uninstall_app,
+    update_app_from_git,
 )
 from appmanager.admin.members import (
     DEFAULT_PER_PAGE,
@@ -29,6 +34,7 @@ from appmanager.admin.members import (
 )
 from appmanager.auth.utils import admin_required, get_current_user
 from appmanager.database import db
+from appmanager.dependency_manager import analyze_dependencies
 from appmanager.health import check_all_apps_health
 from appmanager.models import AppHealthLog, InstalledApp, Role, User, UserAppPermission
 
@@ -158,11 +164,17 @@ def precheck_git():
             slug=slug,
             entry_point=entry_point,
         )
+        from appmanager.admin.app_installer import get_staged_session
+
+        staged_info = get_staged_session(staging_id) or {}
+        dep_report = staged_info.get("dependency_report")
         return jsonify(
             {
                 "success": True,
                 "staging_id": staging_id,
                 "report": scan_report.to_dict(),
+                "dependency_report": dep_report.to_dict() if dep_report else None,
+                "venv_mode": current_app.config.get("APP_VENV_MODE", "singular"),
                 "manifest": manifest,
                 "name": manifest.get("name") or name,
                 "slug": manifest.get("slug") or slug or sanitize_slug(name),
@@ -197,11 +209,17 @@ def precheck_zip():
             slug=slug,
             entry_point=entry_point,
         )
+        from appmanager.admin.app_installer import get_staged_session
+
+        staged_info = get_staged_session(staging_id) or {}
+        dep_report = staged_info.get("dependency_report")
         return jsonify(
             {
                 "success": True,
                 "staging_id": staging_id,
                 "report": scan_report.to_dict(),
+                "dependency_report": dep_report.to_dict() if dep_report else None,
+                "venv_mode": current_app.config.get("APP_VENV_MODE", "singular"),
                 "manifest": manifest,
                 "name": manifest.get("name") or name,
                 "slug": manifest.get("slug") or slug or sanitize_slug(name),
@@ -329,6 +347,114 @@ def install_zip():
         flash(f"Failed to install application from ZIP: {str(e)}", "danger")
 
     return redirect(url_for("admin.dashboard"))
+
+
+@admin_bp.route("/apps/<int:app_id>/update-git", methods=["POST"])
+@admin_required
+def update_git_app(app_id):
+    success, msg, details = update_app_from_git(app_id)
+    if request.is_json:
+        return jsonify({"success": success, "message": msg, "details": details}), (
+            200 if success else 400
+        )
+
+    if success:
+        flash(msg, "success")
+    else:
+        flash(f"Update failed: {msg}", "danger")
+    return redirect(url_for("admin.dashboard"))
+
+
+@admin_bp.route("/apps/<int:app_id>/precheck-replace-zip", methods=["POST"])
+@admin_required
+def precheck_replace_zip(app_id):
+    if "zip_file" not in request.files:
+        return jsonify({"success": False, "error": "No zip file uploaded."}), 400
+
+    file = request.files["zip_file"]
+    if file.filename == "":
+        return jsonify({"success": False, "error": "No selected zip file."}), 400
+
+    try:
+        staging_id, scan_report, manifest, dep_report = stage_zip_replacement(
+            app_id_or_slug=app_id, zip_file_storage=file
+        )
+        return jsonify(
+            {
+                "success": True,
+                "staging_id": staging_id,
+                "report": scan_report.to_dict(),
+                "dependency_report": dep_report.to_dict() if dep_report else None,
+                "venv_mode": current_app.config.get("APP_VENV_MODE", "singular"),
+                "manifest": manifest,
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
+@admin_bp.route("/apps/confirm-replace-zip", methods=["POST"])
+@admin_required
+def confirm_replace_zip():
+    staging_id = (
+        request.form.get("staging_id")
+        or (request.json.get("staging_id") if request.is_json else "")
+        or ""
+    ).strip()
+
+    if not staging_id:
+        if request.is_json:
+            return jsonify({"success": False, "error": "Missing staging ID."}), 400
+        flash("Missing staging ID.", "danger")
+        return redirect(url_for("admin.dashboard"))
+
+    try:
+        app_record = finalize_zip_replacement(staging_id)
+        if request.is_json:
+            return jsonify(
+                {
+                    "success": True,
+                    "app_id": app_record.id,
+                    "name": app_record.name,
+                    "slug": app_record.slug,
+                    "message": f"Application '{app_record.name}' updated successfully with replacement package!",
+                }
+            )
+        flash(
+            f"Application '{app_record.name}' updated successfully with replacement package!",
+            "success",
+        )
+    except Exception as e:
+        if request.is_json:
+            return jsonify({"success": False, "error": str(e)}), 400
+        flash(f"Replacement failed: {str(e)}", "danger")
+
+    return redirect(url_for("admin.dashboard"))
+
+
+@admin_bp.route("/apps/<int:app_id>/dependencies", methods=["GET"])
+@admin_required
+def app_dependencies(app_id):
+    app_record = db.session.get(InstalledApp, app_id)
+    if not app_record:
+        return jsonify({"success": False, "error": "App not found."}), 404
+
+    app_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], app_record.slug)
+    from appmanager.admin.app_installer import parse_manifest
+
+    manifest = parse_manifest(app_dir) or {}
+    venv_mode = current_app.config.get("APP_VENV_MODE", "singular")
+    dep_report = analyze_dependencies(app_dir, manifest=manifest, venv_mode=venv_mode)
+
+    return jsonify(
+        {
+            "success": True,
+            "app_id": app_record.id,
+            "name": app_record.name,
+            "slug": app_record.slug,
+            "dependencies": dep_report.to_dict(),
+        }
+    )
 
 
 @admin_bp.route("/apps/<int:app_id>/delete", methods=["POST"])
@@ -487,6 +613,10 @@ def app_detail(slug):
             }
         )
 
+    app_dir = os.path.join(current_app.config["INSTALLED_APPS_DIR"], app_record.slug)
+    venv_mode = current_app.config.get("APP_VENV_MODE", "singular")
+    dep_report = analyze_dependencies(app_dir, manifest=manifest, venv_mode=venv_mode)
+
     return render_template(
         "admin/app_detail.html",
         user=user,
@@ -496,6 +626,7 @@ def app_detail(slug):
         schema=schema,
         configs=configs,
         manifest=manifest,
+        dep_report=dep_report,
     )
 
 

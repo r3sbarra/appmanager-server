@@ -11,6 +11,7 @@ _signals = Namespace()
 subapp_installed = _signals.signal("subapp-installed")
 subapp_uninstalled = _signals.signal("subapp-uninstalled")
 subapp_reloaded = _signals.signal("subapp-reloaded")
+subapp_updated = _signals.signal("subapp-updated")
 
 # Health Check Signals
 health_check_completed = _signals.signal("health-check-completed")

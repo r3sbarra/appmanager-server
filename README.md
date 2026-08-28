@@ -221,6 +221,11 @@ Available UI slots:
 | `appmanager dev <slug>` | Run standalone local test server with mock authentication |
 | `appmanager seed` | Seed database with default starter apps, roles, and flairs |
 | `appmanager new-subapp <name>` | Scaffold a sub-app with templates (`basic`, `api`, `extension`, `htmx`, `full`) |
+| `appmanager install-git <url>` | Install a sub-app from Git repository with security pre-check audit |
+| `appmanager install-zip <path>` | Install a sub-app from ZIP package with automated security pre-check |
+| `appmanager update <slug>` | One-click update for Git sub-apps or in-place replacement via `--zip <path>` |
+| `appmanager check-deps [slug]` | Inspect dependency health, Python version compatibility, and conflicts (`--all`, `--install`) |
+| `appmanager install-deps [slug]` | Automatically install declared requirements into single or isolated venv (`--all`) |
 | `appmanager validate-subapp <path>` | Validate a sub-app folder or ZIP package against manifest rules |
 | `appmanager export-app <slug>` | Package an installed sub-app into a deployable ZIP archive |
 | `appmanager reload-app <slug>` | Invalidate in-memory WSGI cache for zero-downtime updates |

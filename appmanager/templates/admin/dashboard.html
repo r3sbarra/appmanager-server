@@ -121,6 +121,7 @@
                             <thead>
                                 <tr>
                                     <th>Application</th>
+                                    <th>Source / Runtime</th>
                                     <th>State</th>
                                     <th>Health</th>
                                     <th class="actions-col">Actions</th>
@@ -138,6 +139,16 @@
                                                 {% if app.app_type == 'extension' %}<span class="badge badge-accent">Ext</span>{% endif %}
                                             </div>
                                             <div class="app-path mono">/apps/{{ app.slug }}</div>
+                                        </td>
+                                        <td>
+                                            <div class="source-cell" style="display:flex; flex-direction:column; gap:4px;">
+                                                <span class="badge {% if app.source_type == 'git' %}badge-accent{% else %}badge-primary{% endif %} mono" style="align-self:flex-start; font-size:0.7rem;">
+                                                    {{ app.source_type|upper }}
+                                                </span>
+                                                <span class="text-faint mono" style="font-size:0.7rem;">
+                                                    mode: {{ config.get('APP_VENV_MODE', 'singular') }}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td>
                                             <div class="state-cell">
@@ -177,9 +188,17 @@
                                         </td>
                                         <td class="actions-col">
                                             <div class="row-actions">
-                                                <a href="/admin/apps/{{ app.slug }}" class="btn btn-ghost btn-sm icon-btn" title="Configure App Settings">⚙</a>
+                                                {% if app.source_type == 'git' %}
+                                                    <form class="inline-form" action="/admin/apps/{{ app.id }}/update-git" method="POST" onsubmit="return confirm('Pull latest changes from Git and reload {{ app.name }}?');">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                        <button type="submit" class="btn btn-secondary btn-sm" title="Pull latest commit &amp; reload">↻ Update</button>
+                                                    </form>
+                                                {% else %}
+                                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openReplaceZipModal({{ app.id }}, '{{ app.name }}', '{{ app.slug }}')" title="Upload new ZIP to replace this app">Upgrade</button>
+                                                {% endif %}
+                                                <a href="/admin/apps/{{ app.slug }}" class="btn btn-ghost btn-sm icon-btn" title="Configure App Settings &amp; Dependencies">⚙</a>
                                                 {% if app.has_web_ui %}
-                                                    <a href="/apps/{{ app.slug }}/" class="btn btn-secondary btn-sm">Launch</a>
+                                                    <a href="/apps/{{ app.slug }}/" class="btn btn-primary btn-sm">Launch</a>
                                                 {% endif %}
                                                 <form class="inline-form" action="/admin/apps/{{ app.id }}/set-default" method="POST">
                                                     {% if app.is_default %}
@@ -512,10 +531,10 @@
             <!-- Summary Alert -->
             <div id="sec-summary-banner" class="alert mb-3"></div>
 
-            <!-- Findings List -->
-            <div class="mb-2">
-                <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">Detailed Analysis Findings</h4>
-                <div id="sec-findings-container"></div>
+            <!-- Dependencies & Python Runtime Analysis Section -->
+            <div class="mb-3">
+                <h4 class="form-label mb-2" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px;">Dependencies &amp; Python Runtime</h4>
+                <div id="sec-deps-container"></div>
             </div>
 
             <!-- Confirmation Prompt -->
@@ -531,6 +550,30 @@
             <button type="button" id="btn-cancel-security" class="btn btn-secondary">Cancel Installation</button>
             <button type="button" id="btn-confirm-security" class="btn btn-primary">Proceed &amp; Install Application</button>
         </div>
+    </div>
+</div>
+
+<!-- Replace ZIP Modal -->
+<div id="replace-zip-modal" class="modal-overlay" style="display:none;">
+    <div class="modal">
+        <div class="card-header mb-3">
+            <h3 class="card-title mb-0" id="replace-zip-title">Upgrade Application (ZIP Replacement)</h3>
+        </div>
+        <form id="form-replace-zip" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" id="replace-app-id" name="app_id" value="">
+            <p class="text-muted mb-3" style="font-size:0.85rem;">
+                Upload a new ZIP package to replace the files for <strong id="replace-app-name"></strong>. An automated security audit and dependency check will run before applying changes.
+            </p>
+            <div class="form-group mb-3">
+                <label class="form-label">Select Replacement ZIP Archive</label>
+                <input type="file" id="replace_zip_input" name="zip_file" class="form-input" accept=".zip" required>
+            </div>
+            <div class="action-group" style="justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeReplaceZipModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Pre-Check &amp; Upgrade</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -672,22 +715,26 @@
         document.getElementById('security-loading-modal').style.display = 'none';
     }
 
-    function openSecurityReport(data) {
+    var isReplacementAction = false;
+
+    function openSecurityReport(data, isReplacement) {
+        isReplacementAction = !!isReplacement;
         currentStagingId = data.staging_id;
         currentAppName = data.name;
         currentAppSlug = data.slug;
         currentAppEntry = data.entry_point;
 
-        var report = data.report;
+        var report = data.report || {};
+        var depReport = data.dependency_report || {};
         var badge = document.getElementById('sec-risk-badge');
-        badge.textContent = report.risk_level;
+        badge.textContent = report.risk_level || 'CLEAN';
         badge.className = 'badge ' + (
             report.risk_level === 'CLEAN' ? 'badge-success' :
             report.risk_level === 'LOW' ? 'badge-info' :
             report.risk_level === 'MEDIUM' ? 'badge-warning' : 'badge-danger'
         );
 
-        document.getElementById('sec-app-info').textContent = data.name + ' (slug: ' + data.slug + ', entrypoint: ' + (data.entry_point || 'app:app') + ')';
+        document.getElementById('sec-app-info').textContent = (data.name || 'App') + ' (slug: ' + (data.slug || '') + ', entrypoint: ' + (data.entry_point || 'app:app') + ')';
         document.getElementById('sec-stat-files').textContent = report.files_scanned || 0;
         document.getElementById('sec-stat-py').textContent = report.py_files_scanned || 0;
         document.getElementById('sec-stat-findings').textContent = (report.findings && report.findings.length) ? report.findings.length : 0;
@@ -696,53 +743,90 @@
         banner.className = 'alert ' + (report.is_safe ? (report.findings && report.findings.length ? 'alert-info' : 'alert-success') : 'alert-danger');
         banner.textContent = report.summary || 'Security scan completed.';
 
-        var container = document.getElementById('sec-findings-container');
-        container.innerHTML = '';
+        // Detailed findings
+        var findingsContainer = document.getElementById('sec-findings-container');
+        if (findingsContainer) {
+            findingsContainer.innerHTML = '';
+            if (!report.findings || report.findings.length === 0) {
+                findingsContainer.innerHTML = '<div class="text-muted mono p-3 mb-2" style="background:var(--surface-2); border-radius:var(--radius-sm); border:1px solid var(--border); font-size:0.85rem;">✓ No suspicious calls, command injections, or dangerous dependencies detected. Clean static AST audit.</div>';
+            } else {
+                report.findings.forEach(function(f) {
+                    var card = document.createElement('div');
+                    card.className = 'finding-card severity-' + (f.severity || 'INFO');
+                    
+                    var head = document.createElement('div');
+                    head.className = 'finding-header';
+                    
+                    var title = document.createElement('span');
+                    title.className = 'finding-title';
+                    title.textContent = (f.category || 'Security Issue') + ' — ' + f.message;
+                    
+                    var sevBadge = document.createElement('span');
+                    sevBadge.className = 'badge ' + (f.severity === 'CRITICAL' ? 'badge-danger' : (f.severity === 'HIGH' ? 'badge-danger' : (f.severity === 'MEDIUM' ? 'badge-warning' : 'badge-info')));
+                    sevBadge.textContent = f.severity;
+                    
+                    head.appendChild(title);
+                    head.appendChild(sevBadge);
+                    card.appendChild(head);
 
-        if (!report.findings || report.findings.length === 0) {
-            container.innerHTML = '<div class="text-muted mono p-3 mb-3" style="background:var(--surface-2); border-radius:var(--radius-sm); border:1px solid var(--border); font-size:0.85rem;">✓ No suspicious calls, command injections, or dangerous dependencies detected. Clean static AST audit.</div>';
-        } else {
-            report.findings.forEach(function(f) {
-                var card = document.createElement('div');
-                card.className = 'finding-card severity-' + (f.severity || 'INFO');
-                
-                var head = document.createElement('div');
-                head.className = 'finding-header';
-                
-                var title = document.createElement('span');
-                title.className = 'finding-title';
-                title.textContent = (f.category || 'Security Issue') + ' — ' + f.message;
-                
-                var sevBadge = document.createElement('span');
-                sevBadge.className = 'badge ' + (f.severity === 'CRITICAL' ? 'badge-danger' : (f.severity === 'HIGH' ? 'badge-danger' : (f.severity === 'MEDIUM' ? 'badge-warning' : 'badge-info')));
-                sevBadge.textContent = f.severity;
-                
-                head.appendChild(title);
-                head.appendChild(sevBadge);
-                card.appendChild(head);
+                    if (f.file || f.line) {
+                        var meta = document.createElement('div');
+                        meta.className = 'finding-meta';
+                        meta.textContent = (f.file || 'unknown') + (f.line ? (':' + f.line) : '');
+                        card.appendChild(meta);
+                    }
+                    if (f.snippet) {
+                        var snippet = document.createElement('div');
+                        snippet.className = 'finding-snippet';
+                        snippet.textContent = f.snippet;
+                        card.appendChild(snippet);
+                    }
+                    findingsContainer.appendChild(card);
+                });
+            }
+        }
 
-                if (f.file || f.line) {
-                    var meta = document.createElement('div');
-                    meta.className = 'finding-meta';
-                    meta.textContent = (f.file || 'unknown') + (f.line ? (':' + f.line) : '');
-                    card.appendChild(meta);
-                }
+        // Render Dependencies & Python Runtime Section
+        var depsContainer = document.getElementById('sec-deps-container');
+        if (depsContainer) {
+            depsContainer.innerHTML = '';
+            var depHtml = '<div class="card p-3" style="background:var(--surface-2); border:1px solid var(--border); font-size:0.85rem;">';
+            
+            // Runtime & Venv Mode header
+            depHtml += '<div style="display:flex; justify-content:space-between; margin-bottom:8px; flex-wrap:wrap; gap:8px;">';
+            depHtml += '<span><strong>Runtime:</strong> Python ' + (depReport.python_version_current || '3.x') + ' ' + (depReport.python_version_ok ? '<span class="badge badge-success">Compatible</span>' : '<span class="badge badge-danger">Mismatch</span>') + '</span>';
+            depHtml += '<span><strong>Venv Mode:</strong> <span class="badge badge-outline mono">' + (depReport.venv_mode || data.venv_mode || 'singular') + '</span></span>';
+            depHtml += '</div>';
 
-                if (f.snippet) {
-                    var snippet = document.createElement('div');
-                    snippet.className = 'finding-snippet';
-                    snippet.textContent = f.snippet;
-                    card.appendChild(snippet);
-                }
+            if (depReport.conflicts && depReport.conflicts.length > 0) {
+                depHtml += '<div class="alert alert-danger mb-2" style="font-size:0.8rem;"><strong>Dependency Conflicts Detected:</strong><ul style="margin:4px 0 0 16px; padding:0;">';
+                depReport.conflicts.forEach(function(c) {
+                    depHtml += '<li>' + c + '</li>';
+                });
+                depHtml += '</ul></div>';
+            }
 
-                container.appendChild(card);
-            });
+            if (depReport.items && depReport.items.length > 0) {
+                depHtml += '<table class="table" style="margin-top:6px; font-size:0.8rem;"><thead><tr><th>Package</th><th>Requirement</th><th>Status</th></tr></thead><tbody>';
+                depReport.items.forEach(function(it) {
+                    var stBadge = (it.status === 'satisfied') ? '<span class="badge badge-success">Satisfied</span>' :
+                                  (it.status === 'to_install') ? '<span class="badge badge-info">To Install</span>' :
+                                  '<span class="badge badge-danger">Conflict</span>';
+                    depHtml += '<tr><td><strong>' + it.name + '</strong></td><td class="mono">' + (it.specifier || 'any') + '</td><td>' + stBadge + ' <span class="text-faint">' + (it.message || '') + '</span></td></tr>';
+                });
+                depHtml += '</tbody></table>';
+            } else {
+                depHtml += '<div class="text-muted mono">No explicit requirements.txt found. Uses base environment packages.</div>';
+            }
+
+            depHtml += '</div>';
+            depsContainer.innerHTML = depHtml;
         }
 
         var confirmBtn = document.getElementById('btn-confirm-security');
         confirmBtn.disabled = false;
-        confirmBtn.textContent = 'Proceed & Install Application';
-        if (report.risk_level === 'CRITICAL' || report.risk_level === 'HIGH') {
+        confirmBtn.textContent = isReplacementAction ? 'Proceed & Upgrade Application' : 'Proceed & Install Application';
+        if (report.risk_level === 'CRITICAL' || report.risk_level === 'HIGH' || (depReport.conflicts && depReport.conflicts.length && !depReport.is_safe)) {
             confirmBtn.className = 'btn btn-danger';
         } else {
             confirmBtn.className = 'btn btn-primary';
@@ -753,6 +837,51 @@
 
     function closeSecurityReport() {
         document.getElementById('security-modal').style.display = 'none';
+    }
+
+    // ---- Replace ZIP Modal Controls ----
+    function openReplaceZipModal(appId, appName, appSlug) {
+        document.getElementById('replace-app-id').value = appId;
+        document.getElementById('replace-app-name').textContent = appName + ' (' + appSlug + ')';
+        document.getElementById('replace-zip-modal').style.display = 'flex';
+    }
+    function closeReplaceZipModal() {
+        document.getElementById('replace-zip-modal').style.display = 'none';
+    }
+
+    var formReplaceZip = document.getElementById('form-replace-zip');
+    if (formReplaceZip) {
+        formReplaceZip.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var appId = document.getElementById('replace-app-id').value;
+            var fileInput = document.getElementById('replace_zip_input');
+            if (!fileInput.files || !fileInput.files[0]) return;
+
+            closeReplaceZipModal();
+            openSecurityLoading('Staging Upgrade Package', 'Extracting replacement ZIP & analyzing dependencies...');
+
+            var fd = new FormData();
+            fd.append('csrf_token', '{{ csrf_token() }}');
+            fd.append('zip_file', fileInput.files[0]);
+
+            fetch('/admin/apps/' + appId + '/precheck-replace-zip', {
+                method: 'POST',
+                body: fd
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                closeSecurityLoading();
+                if (data.success) {
+                    openSecurityReport(data, true);
+                } else {
+                    alert('Upgrade Pre-Check Failed: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(function(err) {
+                closeSecurityLoading();
+                alert('Upgrade pre-check request error: ' + err);
+            });
+        });
     }
 
     var cancelSecBtn = document.getElementById('btn-cancel-security');
@@ -776,9 +905,11 @@
             if (!currentStagingId) return;
             var btn = this;
             btn.disabled = true;
-            btn.textContent = 'Installing & Initializing Sub-App...';
+            btn.textContent = isReplacementAction ? 'Upgrading Sub-App Files...' : 'Installing & Initializing Sub-App...';
 
-            fetch('/admin/apps/install-confirm', {
+            var targetEndpoint = isReplacementAction ? '/admin/apps/confirm-replace-zip' : '/admin/apps/install-confirm';
+
+            fetch(targetEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -795,15 +926,15 @@
                 if (res && res.success) {
                     window.location.href = '/admin';
                 } else {
-                    alert('Installation failed: ' + ((res && res.error) || 'Unknown error'));
+                    alert('Operation failed: ' + ((res && res.error) || 'Unknown error'));
                     btn.disabled = false;
-                    btn.textContent = 'Proceed & Install Application';
+                    btn.textContent = isReplacementAction ? 'Proceed & Upgrade Application' : 'Proceed & Install Application';
                 }
             })
             .catch(function(err) {
-                alert('Network error during installation: ' + err.message);
+                alert('Request failed: ' + err);
                 btn.disabled = false;
-                btn.textContent = 'Proceed & Install Application';
+                btn.textContent = isReplacementAction ? 'Proceed & Upgrade Application' : 'Proceed & Install Application';
             });
         });
     }
