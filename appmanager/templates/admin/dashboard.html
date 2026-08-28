@@ -52,8 +52,8 @@
                 <a href="#access-roles" data-tab="access" data-subtab="roles"><span class="nav-icon">🛡️</span> Roles &amp; Governance</a>
                 <a href="#access-flairs" data-tab="access" data-subtab="flairs"><span class="nav-icon">✨</span> Member Flairs</a>
                 <a href="#access-matrix" data-tab="access" data-subtab="matrix"><span class="nav-icon">🔒</span> Permissions Matrix</a>
-                <a href="/admin/audit-log"><span class="nav-icon">📜</span> Audit Log</a>
-                <a href="/admin/settings"><span class="nav-icon">⚙️</span> Settings</a>
+                <a href="#audit" data-tab="audit"><span class="nav-icon">📜</span> Audit Log</a>
+                <a href="#settings" data-tab="settings"><span class="nav-icon">⚙️</span> Settings</a>
             </nav>
         </div>
     </aside>
@@ -649,6 +649,249 @@
             </div>
         </section>
 
+        <!-- ============ AUDIT LOG TAB ============ -->
+        <section class="tab-panel" id="panel-audit">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Audit Log</h1>
+                    <p class="page-subtitle">Append-only trail of security-relevant actions</p>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <form method="GET" action="/admin" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+                    <input type="hidden" name="tab" value="audit">
+                    <div>
+                        <label class="form-label">App</label>
+                        <select name="app_id" class="form-input">
+                            <option value="">All apps</option>
+                            {% for a in apps %}
+                                <option value="{{ a.id }}" {% if audit_app_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.slug }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Action</label>
+                        <input type="text" name="action" value="{{ audit_action or '' }}" class="form-input" placeholder="e.g. db_permission_grant">
+                    </div>
+                    <div>
+                        <label class="form-label">Actor type</label>
+                        <select name="actor_type" class="form-input">
+                            <option value="">All</option>
+                            <option value="admin" {% if audit_actor_type == 'admin' %}selected{% endif %}>admin</option>
+                            <option value="system" {% if audit_actor_type == 'system' %}selected{% endif %}>system</option>
+                            <option value="app" {% if audit_actor_type == 'app' %}selected{% endif %}>app</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    <a href="/admin?tab=audit" class="btn btn-secondary">Reset</a>
+                </form>
+            </div>
+
+            <div class="card">
+                {% if audit_entries %}
+                    <div class="table-wrap">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Action</th>
+                                    <th>Actor</th>
+                                    <th>App</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for e in audit_entries %}
+                                    <tr>
+                                        <td class="mono" style="white-space:nowrap;">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') if e.timestamp else '—' }}</td>
+                                        <td><span class="badge badge-outline mono">{{ e.action }}</span></td>
+                                        <td class="mono">{{ e.actor_type }}{% if e.actor_id %}:{{ e.actor_id }}{% endif %}</td>
+                                        <td class="mono">{{ e.app_id or '—' }}</td>
+                                        <td style="font-size:0.8rem;">
+                                            {% if e.details_json %}
+                                                <span class="mono text-faint">{{ e.details_json[:120] }}{% if e.details_json|length > 120 %}…{% endif %}</span>
+                                            {% else %}—{% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="empty-state p-4">
+                        <p class="text-muted mono mb-0">No audit log entries match the current filters.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- ============ SETTINGS TAB ============ -->
+        <section class="tab-panel" id="panel-settings">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Settings</h1>
+                    <p class="page-subtitle">Host-level configuration: SEO, dashboard/login, and app visibility</p>
+                </div>
+            </div>
+
+            <form method="POST" action="/admin/settings">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <!-- ============ SEO SECTION ============ -->
+                <section id="spanel-seo">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h2 class="card-title mb-0">Search Engine Optimization</h2>
+                                    <span class="badge badge-outline mono">host-level</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="seo_enabled" {% if host_settings.seo_enabled %}checked{% endif %}>
+                                            Enable SEO rendering &amp; injection
+                                        </label>
+                                        <p class="text-muted" style="font-size:0.85rem;">Master toggle. When off, no SEO meta tags are rendered on portal pages or injected into sub-app pages.</p>
+                                    </div>
+
+                                    <div class="grid grid-2 mb-3">
+                                        <div class="form-group">
+                                            <label class="form-label">Portal Title</label>
+                                            <input type="text" name="seo_portal_title" class="form-input" value="{{ host_settings.seo_portal_title }}">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Portal Robots</label>
+                                            <select name="seo_portal_robots" class="form-input">
+                                                {% for r in ['index,follow','index,nofollow','noindex,follow','noindex,nofollow','none'] %}
+                                                    <option value="{{ r }}" {% if host_settings.seo_portal_robots == r %}selected{% endif %}>{{ r }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">Portal Description</label>
+                                        <textarea name="seo_portal_description" class="form-input" rows="2">{{ host_settings.seo_portal_description }}</textarea>
+                                    </div>
+
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">Portal Keywords (comma-separated)</label>
+                                        <input type="text" name="seo_portal_keywords" class="form-input" value="{{ host_settings.seo_portal_keywords|join(', ') }}">
+                                    </div>
+
+                                    <div class="grid grid-2 mb-3">
+                                        <div class="form-group">
+                                            <label class="form-label">Canonical Base URL</label>
+                                            <input type="url" name="seo_portal_canonical_base" class="form-input" placeholder="https://example.com" value="{{ host_settings.seo_portal_canonical_base }}">
+                                            <p class="text-muted" style="font-size:0.8rem;">Used for canonical links and sitemap URLs.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Open Graph Image</label>
+                                            <input type="url" name="seo_portal_og_image" class="form-input" placeholder="https://example.com/og.png" value="{{ host_settings.seo_portal_og_image }}">
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-2 mb-3">
+                                        <div class="form-group">
+                                            <label class="form-label">
+                                                <input type="checkbox" name="seo_allow_app_override" {% if host_settings.seo_allow_app_override %}checked{% endif %}>
+                                                Allow per-app SEO override
+                                            </label>
+                                            <p class="text-muted" style="font-size:0.8rem;">When on, admins can override an app's manifest-declared SEO in the app detail page.</p>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">
+                                                <input type="checkbox" name="seo_auth_apps_noindex" {% if host_settings.seo_auth_apps_noindex %}checked{% endif %}>
+                                                Auth-required apps default to noindex
+                                            </label>
+                                            <p class="text-muted" style="font-size:0.8rem;">When on, apps that require login get <code>noindex,nofollow</code> injected.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="seo_sitemap_enabled" {% if host_settings.seo_sitemap_enabled %}checked{% endif %}>
+                                            Enable sitemap.xml generation
+                                        </label>
+                                        <p class="text-muted" style="font-size:0.8rem;">Generates <code>/sitemap.xml</code> from indexable (public) apps.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- ============ DASHBOARD / LOGIN SECTION ============ -->
+                        <section id="spanel-dashboard">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h2 class="card-title mb-0">Dashboard &amp; Login</h2>
+                                    <span class="badge badge-outline mono">host behavior</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="dashboard_login_required" {% if host_settings.dashboard_login_required %}checked{% endif %}>
+                                            Login required for dashboard
+                                        </label>
+                                        <p class="text-muted" style="font-size:0.85rem;">When on, <code>/dashboard</code> and <code>/</code> require authentication. When off, the dashboard is public.</p>
+                                    </div>
+
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="dashboard_enabled" {% if host_settings.dashboard_enabled %}checked{% endif %}>
+                                            Dashboard enabled
+                                        </label>
+                                        <p class="text-muted" style="font-size:0.85rem;">When off, the dashboard landing page is disabled and <code>/</code> redirects to the default app below.</p>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label class="form-label">Default App Redirect</label>
+                                        <select name="dashboard_default_app" class="form-input">
+                                            <option value="">— None (use is_default flag) —</option>
+                                            {% for a in active_apps %}
+                                                <option value="{{ a.slug }}" {% if host_settings.dashboard_default_app == a.slug %}selected{% endif %}>{{ a.name }} ({{ a.slug }})</option>
+                                            {% endfor %}
+                                        </select>
+                                        <p class="text-muted" style="font-size:0.8rem;">When the dashboard is off, <code>/</code> redirects to this app.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- ============ VISIBILITY SECTION ============ -->
+                        <section id="spanel-visibility">
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h2 class="card-title mb-0">Visibility</h2>
+                                    <span class="badge badge-outline mono">dashboard listing</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group mb-3">
+                                        <label class="form-label">
+                                            <input type="checkbox" name="visibility_show_auth_apps" {% if host_settings.visibility_show_auth_apps %}checked{% endif %}>
+                                            View login-required apps
+                                        </label>
+                                        <p class="text-muted" style="font-size:0.85rem;">When on, apps that require login are shown on the dashboard grid. When off, they are hidden entirely.</p>
+                                    </div>
+
+                                    <div class="card p-3" style="background:var(--surface-2); border:1px solid var(--border);">
+                                        <h4 class="mb-1" style="font-size:0.95rem;">Button labels for login-required apps</h4>
+                                        <p class="text-muted mb-2" style="font-size:0.85rem;">When a login-required app is visible, the launch button adapts to the viewer's state:</p>
+                                        <ul class="text-muted" style="font-size:0.85rem; line-height:1.8;">
+                                            <li><strong>Not logged in</strong> → button reads <em>Login</em> (links to the login page).</li>
+                                            <li><strong>Logged in, no permission</strong> → button reads <em>Permission Required</em>.</li>
+                                            <li><strong>Logged in with permission</strong> → button reads <em>Launch</em>.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <div class="action-group" style="justify-content:flex-end; margin-top:1rem;">
+                            <button type="submit" class="btn btn-primary">Save Settings</button>
+                        </div>
+            </form>
+        </section>
+
     </div>
 </div>
 
@@ -870,8 +1113,11 @@
     // Sidebar navigation click handler
     document.querySelectorAll('.admin-nav a').forEach(function (link) {
         link.addEventListener('click', function (e) {
-            e.preventDefault();
             var tab = link.getAttribute('data-tab');
+            // Real page links (e.g. /admin/audit-log, /admin/settings) have no
+            // data-tab — let them navigate normally instead of hijacking to #null.
+            if (!tab) return;
+            e.preventDefault();
             var subtab = link.getAttribute('data-subtab');
             activateTab(tab, subtab);
             var hashTarget = subtab ? ('access-' + subtab) : tab;

@@ -98,6 +98,25 @@ def dashboard():
     members_pagination = list_members(page=1, per_page=DEFAULT_PER_PAGE)
     members_access_counts = app_access_counts([u.id for u in members_pagination.items])
 
+    # --- Audit log tab context ---
+    from appmanager.audit import query_audit
+    from appmanager.host_settings import get_host_settings
+
+    audit_app_id = request.args.get("app_id", type=int)
+    audit_action = request.args.get("action") or None
+    audit_actor_type = request.args.get("actor_type") or None
+    audit_limit = min(request.args.get("limit", 100, type=int), 500)
+    audit_entries = query_audit(
+        app_id=audit_app_id, action=audit_action, actor_type=audit_actor_type, limit=audit_limit
+    )
+
+    # --- Settings tab context ---
+    host_settings = get_host_settings()
+    active_apps = InstalledApp.query.filter_by(is_active=True).order_by(InstalledApp.name.asc()).all()
+
+    # Deep-link support: ?tab=audit / ?tab=settings activates that tab on load.
+    active_tab = request.args.get("tab") or ""
+
     return render_template(
         "admin/dashboard.html",
         user=user,
@@ -126,6 +145,16 @@ def dashboard():
         access_counts=members_access_counts,
         members_total_apps=total_app_count(),
         total_apps=total_app_count(),
+        # Audit log tab
+        audit_entries=audit_entries,
+        audit_app_id=audit_app_id,
+        audit_action=audit_action,
+        audit_actor_type=audit_actor_type,
+        audit_limit=audit_limit,
+        # Settings tab
+        host_settings=host_settings,
+        active_apps=active_apps,
+        active_tab=active_tab,
     )
 
 
@@ -773,27 +802,12 @@ def revoke_app_permission(slug):
 @admin_bp.route("/audit-log")
 @admin_required
 def audit_log_view():
-    """Filterable admin view of the audit log."""
-    from appmanager.audit import query_audit
-
-    app_id = request.args.get("app_id", type=int)
-    action = request.args.get("action") or None
-    actor_type = request.args.get("actor_type") or None
-    limit = min(request.args.get("limit", 100, type=int), 500)
-
-    entries = query_audit(
-        app_id=app_id, action=action, actor_type=actor_type, limit=limit
-    )
-    apps = InstalledApp.query.order_by(InstalledApp.name).all()
-    return render_template(
-        "admin/audit_log.html",
-        user=get_current_user(),
-        entries=entries,
-        apps=apps,
-        filter_app_id=app_id,
-        filter_action=action,
-        filter_actor_type=actor_type,
-    )
+    """
+    Audit log now lives as a tab on the admin dashboard. This route redirects
+    there, preserving any filter query params (kept for old bookmarks/links).
+    """
+    qs = request.query_string.decode()
+    return redirect(url_for("admin.dashboard", _anchor="audit") + (f"?{qs}" if qs else ""))
 
 
 @admin_bp.route("/permissions", methods=["GET", "POST"])
@@ -1201,27 +1215,17 @@ def members_bulk():
 @admin_required
 def settings_page():
     """
-    Host-level settings page: SEO, Dashboard/Login, and Visibility sections.
+    Settings now lives as a tab on the admin dashboard. This route redirects
+    there (kept for old bookmarks/links).
     """
-    from appmanager.host_settings import get_host_settings
-    from appmanager.models import InstalledApp
-
-    user = get_current_user()
-    settings = get_host_settings()
-    apps = InstalledApp.query.filter_by(is_active=True).order_by(InstalledApp.name.asc()).all()
-    return render_template(
-        "admin/settings.html",
-        user=user,
-        settings=settings,
-        apps=apps,
-    )
+    return redirect(url_for("admin.dashboard", _anchor="settings"))
 
 
 @admin_bp.route("/settings", methods=["POST"])
 @admin_required
 def settings_save():
     """
-    Persist host-level settings from the Settings page form.
+    Persist host-level settings from the Settings tab form.
     """
     from appmanager.host_settings import set_host_settings
 
@@ -1256,4 +1260,4 @@ def settings_save():
 
     set_host_settings({**seo_updates, **dashboard_updates, **visibility_updates})
     flash("Settings saved.", "success")
-    return redirect(url_for("admin.settings_page"))
+    return redirect(url_for("admin.dashboard", _anchor="settings"))

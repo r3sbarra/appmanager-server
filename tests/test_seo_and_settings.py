@@ -237,12 +237,17 @@ def test_settings_page_renders_sections(tmp_path):
         admin = db.session.get(User, admin_id)
         client = app.test_client()
         client.set_cookie(JWT_COOKIE_NAME, generate_jwt(admin))
-        res = client.get("/admin/settings")
+        # Settings now lives as a tab on the admin dashboard.
+        res = client.get("/admin/")
         assert res.status_code == 200
         body = res.get_data(as_text=True)
         assert "Search Engine Optimization" in body
         assert "Dashboard &amp; Login" in body
         assert "Visibility" in body
+        # Old /admin/settings URL redirects to the dashboard settings tab.
+        res2 = client.get("/admin/settings")
+        assert res2.status_code == 302
+        assert "#settings" in res2.headers.get("Location", "")
 
 
 def test_settings_save_persists(tmp_path):
