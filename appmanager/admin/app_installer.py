@@ -296,6 +296,8 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
 
     mod = importlib.util.module_from_spec(spec)
     sys.modules[scoped_module_name] = mod
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
     spec.loader.exec_module(mod)
 
     # Check for Flask app instance, callable create_app factory, or WSGI middleware
