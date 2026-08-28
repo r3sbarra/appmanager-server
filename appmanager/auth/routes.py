@@ -257,3 +257,14 @@ def profile():
         )
 
     return render_template("auth/profile.html", user=user, apps=accessible_apps)
+
+
+@auth_bp.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@auth_bp.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
