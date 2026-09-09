@@ -86,11 +86,17 @@ def sync_panels(app_record, manifest=None):
         ~AppAdminPanel.panel_id.in_(declared_ids) if declared_ids else True
     ).delete(synchronize_session=False)
 
+    # Load existing panels for this app once (avoids one query per declared panel).
+    existing = {
+        p.panel_id: p
+        for p in AppAdminPanel.query.filter_by(app_id=app_record.id).all()
+    }
+
     for i, p in enumerate(declared):
         pid = p.get("id")
         if not pid:
             continue
-        row = AppAdminPanel.query.filter_by(app_id=app_record.id, panel_id=pid).first()
+        row = existing.get(pid)
         if not row:
             row = AppAdminPanel(app_id=app_record.id, panel_id=pid)
             db.session.add(row)

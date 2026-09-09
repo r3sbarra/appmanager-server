@@ -807,9 +807,19 @@ def finalize_staged_installation(
         pass
 
     users = User.query.all()
-    for u in users:
-        perm = UserAppPermission(user_id=u.id, app_id=installed_app.id, can_access=True)
-        db.session.add(perm)
+    # Bulk-insert a grant-all permission for every user (one statement instead
+    # of one INSERT per user). Skip users who already have a row for this app.
+    existing_user_ids = {
+        p.user_id
+        for p in UserAppPermission.query.filter_by(app_id=installed_app.id).all()
+    }
+    new_perms = [
+        {"user_id": u.id, "app_id": installed_app.id, "can_access": True}
+        for u in users
+        if u.id not in existing_user_ids
+    ]
+    if new_perms:
+        db.session.bulk_insert_mappings(UserAppPermission, new_perms)
     db.session.commit()
 
     # Sync declared admin panels from the manifest

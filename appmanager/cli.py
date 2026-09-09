@@ -96,16 +96,20 @@ def run_scheduled_tasks(app=None):
         now = datetime.now(timezone.utc)
         expired_count = MagicLinkToken.query.filter(MagicLinkToken.expires_at < now).delete()
 
-        # Keep only latest 100 health logs per app
-        for app_record in apps:
-            old_logs = (
-                AppHealthLog.query.filter_by(app_id=app_record.id)
-                .order_by(AppHealthLog.checked_at.desc())
-                .offset(100)
-                .all()
-            )
-            for log in old_logs:
-                db.session.delete(log)
+        # Keep only latest 100 health logs per app (single windowed delete
+        # instead of a per-app loop of row-by-row deletes).
+        from sqlalchemy import func
+
+        rn = func.row_number().over(
+            partition_by=AppHealthLog.app_id,
+            order_by=AppHealthLog.checked_at.desc(),
+        ).label("rn")
+        # Subquery: ids of rows ranked beyond the newest 100 per app.
+        ranked = db.session.query(AppHealthLog.id, rn).subquery()
+        excess_ids = db.session.query(ranked.c.id).filter(ranked.c.rn > 100)
+        AppHealthLog.query.filter(AppHealthLog.id.in_(excess_ids)).delete(
+            synchronize_session=False
+        )
 
         db.session.commit()
         print(f"Maintenance completed. Purged {expired_count} expired tokens.\n")
