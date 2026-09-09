@@ -6,7 +6,10 @@ the OLD per-item implementation (reconstructed for comparison).
 
 Run:  ./venv/bin/python scripts/bench_efficiency.py
 """
-import os, sys, time
+import os
+import sys
+import time
+
 from sqlalchemy import event
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,10 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("APPMANAGER_DATABASE_URI", "sqlite:///:memory:")
 os.environ.setdefault("APPMANAGER_SECRET_KEY", "bench-secret")
 
+from datetime import datetime, timedelta, timezone
+
 from appmanager import create_app
 from appmanager.database import db
-from appmanager.models import InstalledApp, User, Role, UserAppPermission, AppHealthLog
-from datetime import datetime, timezone, timedelta
+from appmanager.models import AppHealthLog, InstalledApp, Role, User, UserAppPermission
 
 
 def make_app():
