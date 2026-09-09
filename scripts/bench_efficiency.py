@@ -6,6 +6,7 @@ the OLD per-item implementation (reconstructed for comparison).
 
 Run:  ./venv/bin/python scripts/bench_efficiency.py
 """
+
 import os
 import sys
 import time
@@ -35,9 +36,14 @@ def make_app():
 def seed(app, n_apps=20, n_users=10, logs_per_app=15):
     # Assumes an app context is already open (caller holds it).
     for i in range(n_apps):
-        db.session.add(InstalledApp(
-            name=f"app{i}", slug=f"app{i}", source_type="git", is_active=True,
-        ))
+        db.session.add(
+            InstalledApp(
+                name=f"app{i}",
+                slug=f"app{i}",
+                source_type="git",
+                is_active=True,
+            )
+        )
     db.session.flush()
     apps = InstalledApp.query.all()
     for i in range(n_users):
@@ -47,10 +53,13 @@ def seed(app, n_apps=20, n_users=10, logs_per_app=15):
     # health logs
     for a in apps:
         for k in range(logs_per_app):
-            db.session.add(AppHealthLog(
-                app_id=a.id, status="healthy",
-                checked_at=datetime.now(timezone.utc) - timedelta(minutes=k),
-            ))
+            db.session.add(
+                AppHealthLog(
+                    app_id=a.id,
+                    status="healthy",
+                    checked_at=datetime.now(timezone.utc) - timedelta(minutes=k),
+                )
+            )
     # some perms
     for u in users[:5]:
         for a in apps[:5]:
@@ -65,8 +74,10 @@ def count_queries(fn):
     app = create_app()
     queries = {"n": 0}
     with app.app_context():
+
         def before(conn, cursor, statement, parameters, context, executemany):
             queries["n"] += 1
+
         event.listen(db.engine, "before_cursor_execute", before)
         try:
             fn()
@@ -80,8 +91,11 @@ def new_dashboard_health(apps):
     health_map, health_history = {}, {}
     app_ids = [a.id for a in apps]
     if app_ids:
-        logs = (AppHealthLog.query.filter(AppHealthLog.app_id.in_(app_ids))
-                .order_by(AppHealthLog.checked_at.desc()).all())
+        logs = (
+            AppHealthLog.query.filter(AppHealthLog.app_id.in_(app_ids))
+            .order_by(AppHealthLog.checked_at.desc())
+            .all()
+        )
         for log in logs:
             if log.app_id not in health_map:
                 health_map[log.app_id] = log
@@ -94,6 +108,7 @@ def new_dashboard_health(apps):
 
 def new_role_counts(roles):
     from appmanager.database import db
+
     return dict(db.session.query(User.role, db.func.count(User.id)).group_by(User.role).all())
 
 
@@ -122,11 +137,18 @@ def new_permissions_post(users, apps, form):
 def old_dashboard_health(apps):
     health_map, health_history = {}, {}
     for a in apps:
-        latest = (AppHealthLog.query.filter_by(app_id=a.id)
-                  .order_by(AppHealthLog.checked_at.desc()).first())
+        latest = (
+            AppHealthLog.query.filter_by(app_id=a.id)
+            .order_by(AppHealthLog.checked_at.desc())
+            .first()
+        )
         health_map[a.id] = latest
-        history = (AppHealthLog.query.filter_by(app_id=a.id)
-                   .order_by(AppHealthLog.checked_at.desc()).limit(12).all())
+        history = (
+            AppHealthLog.query.filter_by(app_id=a.id)
+            .order_by(AppHealthLog.checked_at.desc())
+            .limit(12)
+            .all()
+        )
         health_history[a.id] = list(reversed(history))
     return health_map, health_history
 
@@ -166,20 +188,26 @@ def main():
         # Dashboard health
         n_old = count_queries(lambda: old_dashboard_health(apps))
         n_new = count_queries(lambda: new_dashboard_health(apps))
-        print(f"[Dashboard health]  OLD: {n_old} queries | NEW: {n_new} queries | "
-              f"{n_old/n_new:.1f}x fewer")
+        print(
+            f"[Dashboard health]  OLD: {n_old} queries | NEW: {n_new} queries | "
+            f"{n_old / n_new:.1f}x fewer"
+        )
 
         # Role counts
         n_old = count_queries(lambda: old_role_counts(roles))
         n_new = count_queries(lambda: new_role_counts(roles))
-        print(f"[Role counts]       OLD: {n_old} queries | NEW: {n_new} queries | "
-              f"{n_old/max(n_new,1):.1f}x fewer")
+        print(
+            f"[Role counts]       OLD: {n_old} queries | NEW: {n_new} queries | "
+            f"{n_old / max(n_new, 1):.1f}x fewer"
+        )
 
         # Permissions POST
         n_old = count_queries(lambda: old_permissions_post(users, apps, form))
         n_new = count_queries(lambda: new_permissions_post(users, apps, form))
-        print(f"[Permissions POST]  OLD: {n_old} queries | NEW: {n_new} queries | "
-              f"{n_old/max(n_new,1):.1f}x fewer")
+        print(
+            f"[Permissions POST]  OLD: {n_old} queries | NEW: {n_new} queries | "
+            f"{n_old / max(n_new, 1):.1f}x fewer"
+        )
 
         # Timing (wall-clock) for permissions POST
         def timeit(fn, iters=5):
@@ -190,8 +218,10 @@ def main():
 
         t_old = timeit(lambda: old_permissions_post(users, apps, form))
         t_new = timeit(lambda: new_permissions_post(users, apps, form))
-        print(f"\n[Permissions POST wall-clock] OLD: {t_old*1000:.2f} ms | "
-              f"NEW: {t_new*1000:.2f} ms | {t_old/t_new:.1f}x faster")
+        print(
+            f"\n[Permissions POST wall-clock] OLD: {t_old * 1000:.2f} ms | "
+            f"NEW: {t_new * 1000:.2f} ms | {t_old / t_new:.1f}x faster"
+        )
 
 
 if __name__ == "__main__":

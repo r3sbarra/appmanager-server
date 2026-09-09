@@ -79,9 +79,7 @@ def dashboard():
 
     # Role member counts (single GROUP BY instead of one count query per role)
     role_counts = dict(
-        db.session.query(User.role, db.func.count(User.id))
-        .group_by(User.role)
-        .all()
+        db.session.query(User.role, db.func.count(User.id)).group_by(User.role).all()
     )
 
     # Permission matrix map

@@ -810,8 +810,7 @@ def finalize_staged_installation(
     # Bulk-insert a grant-all permission for every user (one statement instead
     # of one INSERT per user). Skip users who already have a row for this app.
     existing_user_ids = {
-        p.user_id
-        for p in UserAppPermission.query.filter_by(app_id=installed_app.id).all()
+        p.user_id for p in UserAppPermission.query.filter_by(app_id=installed_app.id).all()
     }
     new_perms = [
         {"user_id": u.id, "app_id": installed_app.id, "can_access": True}
