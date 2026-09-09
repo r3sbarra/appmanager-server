@@ -32,6 +32,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] - 2026-09-09
+
+### Performance
+- **Batch admin dashboard queries**: health-log fetch for all apps is now a single
+  batched query (was 2 queries per app) and role member counts use one `GROUP BY`
+  instead of one count query per role. Dashboard health: 60 → 21 queries;
+  role counts: 4 → 1 query.
+- **Batch permissions matrix update**: the `/admin/permissions` POST handler now
+  loads existing permissions into a lookup map once instead of issuing one query
+  per user × app cell (was O(users × apps) queries). 405 → 31 queries, ~4.2×
+  faster wall-clock on 20 apps × 10 users.
+- **Bulk-insert grant-all permissions on install**: `app_installer` now inserts
+  per-user permissions in a single `bulk_insert_mappings` statement (was one
+  INSERT per user), skipping users who already have a row.
+- **Windowed health-log purge**: the CLI maintenance command keeps the latest 100
+  health logs per app with a single windowed `DELETE` (was a per-app loop of
+  row-by-row deletes).
+- **Batch admin-panel sync**: `sync_panels` loads existing panels for an app once
+  into a map instead of one query per declared panel.
+
+---
+
 ## [0.4.0] - 2026-08-28
 
 ### Added
