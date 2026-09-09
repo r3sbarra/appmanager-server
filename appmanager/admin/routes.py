@@ -58,27 +58,31 @@ def dashboard():
     users = User.query.order_by(User.created_at.desc()).all()
     roles = Role.query.order_by(Role.is_system.desc(), Role.name.asc()).all()
 
-    # Get latest health log for each app
+    # Get latest health log for each app (batched — one query instead of 2 per app).
     health_map = {}
     health_history = {}
-    for a in apps:
-        latest = (
-            AppHealthLog.query.filter_by(app_id=a.id)
+    app_ids = [a.id for a in apps]
+    if app_ids:
+        logs = (
+            AppHealthLog.query.filter(AppHealthLog.app_id.in_(app_ids))
             .order_by(AppHealthLog.checked_at.desc())
-            .first()
-        )
-        health_map[a.id] = latest
-        # Recent health history (for braille sparkline) — last 12 checks, oldest first
-        history = (
-            AppHealthLog.query.filter_by(app_id=a.id)
-            .order_by(AppHealthLog.checked_at.desc())
-            .limit(12)
             .all()
         )
-        health_history[a.id] = list(reversed(history))
+        for log in logs:
+            if log.app_id not in health_map:
+                health_map[log.app_id] = log
+            hist = health_history.setdefault(log.app_id, [])
+            if len(hist) < 12:
+                hist.append(log)
+        # history is newest-first; reverse to oldest-first for the sparkline
+        health_history = {aid: list(reversed(h)) for aid, h in health_history.items()}
 
-    # Role member counts
-    role_counts = {r.slug: User.query.filter_by(role=r.slug).count() for r in roles}
+    # Role member counts (single GROUP BY instead of one count query per role)
+    role_counts = dict(
+        db.session.query(User.role, db.func.count(User.id))
+        .group_by(User.role)
+        .all()
+    )
 
     # Permission matrix map
     perms_map = {(p.user_id, p.app_id): p.can_access for p in UserAppPermission.query.all()}
@@ -820,11 +824,21 @@ def permissions():
         users = User.query.all()
         apps = InstalledApp.query.all()
 
+        # Load existing permissions once into a lookup map instead of issuing
+        # one query per user x app cell (was O(users x apps) queries).
+        existing = {
+            (p.user_id, p.app_id): p
+            for p in UserAppPermission.query.filter(
+                UserAppPermission.user_id.in_([u.id for u in users]),
+                UserAppPermission.app_id.in_([a.id for a in apps]),
+            ).all()
+        }
+
         for u in users:
             for a in apps:
                 form_key = f"perm_{u.id}_{a.id}"
                 has_access = request.form.get(form_key) == "1"
-                perm = UserAppPermission.query.filter_by(user_id=u.id, app_id=a.id).first()
+                perm = existing.get((u.id, a.id))
                 if not perm:
                     perm = UserAppPermission(user_id=u.id, app_id=a.id, can_access=has_access)
                     db.session.add(perm)
