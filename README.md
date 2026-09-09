@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="AppManager Banner" width="100%">
-</p>
-
-<p align="center">
   <a href="https://github.com/r3sbarra/appmanager-server/actions"><img src="https://github.com/r3sbarra/appmanager-server/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
   <a href="https://pypi.org/project/appmanager-server/"><img src="https://img.shields.io/pypi/v/appmanager-server.svg" alt="PyPI Version"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/appmanager-server.svg" alt="Python Versions"></a>
