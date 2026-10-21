@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Production secret guard**: the server now refuses to start when
+  `APPMANAGER_ENV=production` and `SECRET_KEY`/`JWT_SECRET` are unset, still at
+  their development defaults, or shorter than 32 characters. New
+  `enforce_secure_secrets()` (`config.py`) is wired into `create_app()`;
+  `get_security_secret()` no longer falls back to a hard-coded literal.
+- **JWT token revocation**: new `User.token_version` (with SQLite
+  auto-migration), a `tv` claim on issued tokens, and `bump_token_version()`.
+  `/auth/logout` bumps the version and both `get_current_user()` and the WSGI
+  dispatcher reject stale tokens, so a copied cookie dies immediately instead of
+  living out its 7-day window.
+- **Flair badge XSS fix**: `render_user_flair_badge()` now HTML-escapes the
+  title and validates the color against a hex/named-color allowlist.
+
+### Added
+- CI **Security Scan** job running `bandit` (medium+ severity) and `pip-audit`.
+- Tests: `tests/test_secret_hardening.py` (6) and `tests/test_token_revocation.py` (4).
+- `APPMANAGER_ENV` documented in `.env.example` (defaults to `development`).
+
 ### Added
 - **SEO capabilities**: apps can declare SEO metadata in their manifest (`seo`
   block) which the host persists to `InstalledApp` and renders into served HTML.

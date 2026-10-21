@@ -9,6 +9,7 @@ from appmanager.extensions import (
     set_extension_data,
 )
 from appmanager.models import InstalledApp, User
+from tests.csrf_helpers import post_with_csrf
 
 
 @pytest.fixture
@@ -100,8 +101,10 @@ def test_admin_manage_flairs_route(app):
         client.set_cookie(JWT_COOKIE_NAME, generate_jwt(admin))
 
         # Test POST /admin/flairs to assign flair
-        res = client.post(
+        res = post_with_csrf(
+            client,
             "/admin/flairs",
+            user=admin,
             data={
                 "user_id": str(user.id),
                 "flair_title": "⭐ VIP Member",

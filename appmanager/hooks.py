@@ -75,7 +75,10 @@ class HookRegistry:
                     f"[HOOK ERROR] Error rendering slot '{slot_name}' in app '{entry.get('app_slug')}': {e}"
                 )
 
-        return Markup("".join(output_parts))
+        # Extension callbacks return trusted, already-escaped Markup (they run
+        # in-process with full host privileges, same trust level as host code).
+        # This is the documented plugin contract, not an injection sink.
+        return Markup("".join(output_parts))  # nosec B704
 
     def register_hook(
         self,

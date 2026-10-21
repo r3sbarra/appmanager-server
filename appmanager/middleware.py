@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -6,7 +8,7 @@ from typing import Any, Callable, Dict, Optional
 import jwt
 from flask import Flask
 
-from appmanager.admin.app_installer import load_wsgi_app_from_path
+from appmanager.admin.app_installer import load_wsgi_app_from_path, purge_installed_app_modules
 from appmanager.database import db
 from appmanager.models import InstalledApp, User, UserAppPermission
 from appmanager.signals import subapp_reloaded
@@ -28,11 +30,25 @@ class DynamicAppDispatcherMiddleware:
     def clear_cache(self, slug: Optional[str] = None) -> None:
         """
         Clears the in-memory cache for a single sub-app or all sub-apps.
+
+        Also evicts the app's imported module subtree from ``sys.modules`` so
+        the next load re-executes the new source rather than reusing cached
+        submodules from the previous version.
         """
         if slug:
             self.sub_app_cache.pop(slug, None)
+            try:
+                purge_installed_app_modules(slug)
+            except Exception as e:
+                logger.warning("Failed to purge modules for '%s': %s", slug, e)
         else:
+            slugs = list(self.sub_app_cache.keys())
             self.sub_app_cache.clear()
+            for s in slugs:
+                try:
+                    purge_installed_app_modules(s)
+                except Exception:
+                    pass
 
     def _get_user_from_environ(
         self, environ: Dict[str, Any], app_context_app: Flask
@@ -67,7 +83,10 @@ class DynamicAppDispatcherMiddleware:
             user_id = payload.get("user_id")
             user = db.session.get(User, user_id)
             if user and user.is_active:
-                return user
+                # Honor token revocation: tokens minted before the user's
+                # current token_version (e.g. logged out elsewhere) are stale.
+                if payload.get("tv", 0) == (getattr(user, "token_version", 0) or 0):
+                    return user
         except Exception:
             return None
 
@@ -204,9 +223,29 @@ class DynamicAppDispatcherMiddleware:
                     if user:
                         environ["HTTP_X_APPMANAGER_USER_ID"] = str(user.id)
                         environ["HTTP_X_APPMANAGER_USER_EMAIL"] = user.email
+                        environ["HTTP_X_APPMANAGER_USER_NAME"] = user.name or user.email or ""
                         environ["HTTP_X_APPMANAGER_USER_ROLE"] = user.role
                     environ["HTTP_X_APPMANAGER_SUBAPP_SLUG"] = slug
                     environ["HTTP_X_FORWARDED_PREFIX"] = f"/apps/{slug}"
+
+                    # Sign the identity context so the SDK can verify it when the
+                    # operator configured APPMANAGER_HEADER_SECRET on the sub-app.
+                    # The canonical payload is exactly what AppManagerClient
+                    # documents: "id|email|role", HMAC-SHA256 hex digest.
+                    header_secret = self.main_app.config.get("APPMANAGER_HEADER_SECRET")
+                    if header_secret:
+                        payload = "|".join(
+                            [
+                                environ.get("HTTP_X_APPMANAGER_USER_ID", ""),
+                                environ.get("HTTP_X_APPMANAGER_USER_EMAIL", ""),
+                                environ.get("HTTP_X_APPMANAGER_USER_ROLE", ""),
+                            ]
+                        )
+                        environ["HTTP_X_APPMANAGER_SIGNATURE"] = hmac.new(
+                            str(header_secret).encode("utf-8"),
+                            payload.encode("utf-8"),
+                            hashlib.sha256,
+                        ).hexdigest()
 
                     # 3. Inject the app's stored per-app API key so the sub-app can
                     #    authenticate to the host REST API without holding credentials

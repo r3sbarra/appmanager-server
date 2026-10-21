@@ -5,6 +5,7 @@ import pytest
 from appmanager import create_app
 from appmanager.database import db
 from appmanager.models import InstalledApp, User
+from tests.csrf_helpers import post_with_csrf
 
 
 @pytest.fixture
@@ -59,8 +60,10 @@ def test_admin_edit_user(app):
         token = generate_jwt(admin)
         client.set_cookie(JWT_COOKIE_NAME, token)
 
-        res = client.post(
+        res = post_with_csrf(
+            client,
             f"/admin/users/{target_id}/edit",
+            user=admin,
             data={"name": "Updated User Name", "role": "admin", "is_active": "1", "perm_1": "1"},
             follow_redirects=True,
         )

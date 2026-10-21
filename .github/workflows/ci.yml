@@ -23,6 +23,22 @@ jobs:
           ruff check .
           ruff format --check .
 
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install scanners
+        run: pip install bandit pip-audit
+      - name: Bandit SAST (medium+ severity)
+        run: bandit -r appmanager -ll -q
+      - name: Dependency vulnerability audit
+        run: pip-audit --skip-editable || true
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

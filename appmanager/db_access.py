@@ -15,6 +15,7 @@ Permission model (``app_db_permissions`` table):
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -52,14 +53,42 @@ def _is_mysql(url: str) -> bool:
     return url.startswith("mysql") or "mysql" in url.split("://")[0]
 
 
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+
+def _scoped_sqlite_engine(app: InstalledApp, perm: AppDbPermission):
+    """
+    Build a truly isolated SQLite engine for the app.
+
+    The previous implementation returned an engine on the *host* database file
+    while the permission UI called it "scoped", so an app holding scoped access
+    could read every host table (users, audit log, tokens) with plain SQL. The
+    table-prefix convention was advisory only.
+
+    Each app now gets its own database file under ``<BASE_DIR>/instance/apps/``.
+    The app cannot reference host tables at all; the ``table_prefix`` remains a
+    naming convenience inside its own file.
+    """
+    from flask import current_app
+
+    base_dir = current_app.config.get("BASE_DIR") or os.getcwd()
+    apps_dir = os.path.join(base_dir, "instance", "apps")
+    os.makedirs(apps_dir, exist_ok=True)
+
+    db_path = os.path.join(apps_dir, f"{app.slug}.db")
+    return create_engine(f"sqlite:///{db_path}")
+
+
 def _scoped_engine(app: InstalledApp, perm: AppDbPermission):
     """
     Build a scoped engine for the app.
 
     - MySQL: create a dedicated schema ``appman_ext_<slug>`` and return an engine
       pointed at it (the app can only touch its own schema).
-    - SQLite: return an engine to the host DB; the app is expected to use the
-      ``table_prefix`` namespace (``app_<slug>_*``) via ``db_table()``.
+    - SQLite: return an engine on the app's own database file (see
+      :func:`_scoped_sqlite_engine`). The app cannot reach host tables at all;
+      ``table_prefix`` is only a naming convention inside its own file.
     """
     host_url = _host_db_url()
     slug = app.slug
@@ -78,8 +107,8 @@ def _scoped_engine(app: InstalledApp, perm: AppDbPermission):
         # Point the app engine at the dedicated schema.
         return create_engine(host_url)
 
-    # SQLite: reuse the host DB file; scoping is by table prefix.
-    return create_engine(host_url)
+    # SQLite: give the app its own database file (see _scoped_sqlite_engine).
+    return _scoped_sqlite_engine(app, perm)
 
 
 def _full_engine(app: InstalledApp, perm: AppDbPermission):
@@ -360,8 +389,20 @@ def cleanup_app_data(app_id: int, slug: str) -> None:
         except Exception as e:
             logger.warning("Could not drop MySQL schema %s: %s", schema, e)
 
-    # For SQLite, drop any scoped tables (app_<slug>_*) from the host DB.
+    # For SQLite, remove the app's dedicated database file. Earlier releases
+    # kept scoped tables inside the host DB (``app_<slug>_*``); drop those too
+    # so an upgrade cleans up after itself.
     if not _is_mysql(host_url):
+        try:
+            from flask import current_app
+
+            base_dir = current_app.config.get("BASE_DIR") or os.getcwd()
+            app_db_path = os.path.join(base_dir, "instance", "apps", f"{slug}.db")
+            if os.path.exists(app_db_path):
+                os.remove(app_db_path)
+        except Exception as e:
+            logger.warning("Could not remove scoped database for '%s': %s", slug, e)
+
         try:
             engine = create_engine(host_url)
             prefix = f"app_{slug}_"

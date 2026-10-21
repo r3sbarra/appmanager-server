@@ -103,6 +103,11 @@ class AppManager:
 
         app.jinja_env.globals["csrf_token"] = generate_csrf_token
 
+        # Host-wide CSRF guard: every state-changing request on the host surface
+        # (admin, auth, anything not explicitly exempted) must carry a valid
+        # token. Templates already emit it; previously nothing validated it.
+        self._register_csrf_guard(app)
+
         # Register Blueprints
         if self.register_blueprints:
             from appmanager.api import api_bp
@@ -131,6 +136,42 @@ class AppManager:
         if not hasattr(app, "extensions"):
             app.extensions = {}
         app.extensions["appmanager"] = self
+
+    def _register_csrf_guard(self, app: Flask) -> None:
+        """
+        Enforce CSRF validation on all host POST/PUT/PATCH/DELETE requests.
+
+        Exemptions live in :func:`appmanager.security.csrf_applies`: the REST API
+        (``/api/*``) authenticates with keys/Bearer rather than cookies, and
+        dispatched sub-apps (``/apps/*``) own their own CSRF handling.
+
+        A ``CSRF_PROTECT`` config flag (default True) allows tests and
+        non-browser embedding scenarios to disable the guard explicitly.
+        """
+        from flask import abort, jsonify, request
+
+        from appmanager.security import csrf_applies, validate_csrf_token
+
+        @app.before_request
+        def _csrf_protect() -> Any:
+            if not app.config.get("CSRF_PROTECT", True):
+                return None
+            if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+                return None
+            if not csrf_applies(request.path):
+                return None
+
+            token = (
+                request.form.get("csrf_token")
+                or request.headers.get("X-CSRFToken")
+                or request.headers.get("X-CSRF-Token")
+            )
+            if validate_csrf_token(token):
+                return None
+
+            if request.is_json or "application/json" in request.headers.get("Accept", ""):
+                return jsonify({"error": "CSRF validation failed", "success": False}), 400
+            abort(400, description="CSRF validation failed. Please refresh and try again.")
 
     def _register_default_routes(self, app: Flask) -> None:
         @app.route("/")

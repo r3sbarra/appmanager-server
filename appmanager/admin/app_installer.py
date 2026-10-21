@@ -41,33 +41,16 @@ def sanitize_slug(slug_text: str) -> str:
 
 def parse_manifest(app_dir: str) -> Optional[Dict[str, Any]]:
     """
-    Parses manifest.json from app_dir if present.
-    If absent, attempts to discover a Python-defined AppManifest from entrypoints.
-    Returns dict or None.
+    Parse the effective manifest for ``app_dir``.
+
+    Thin compatibility wrapper over :func:`appmanager.manifest.load_manifest`,
+    which is now the only implementation. Returns ``None`` (rather than ``{}``)
+    when the app declares nothing, preserving this module's historical contract.
     """
-    manifest_path = os.path.join(app_dir, "manifest.json")
-    if os.path.exists(manifest_path):
-        try:
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"[INSTALLER WARNING] Failed to parse manifest.json at {app_dir}: {e}")
-            return None
+    from appmanager.manifest import load_manifest
 
-    # Fallback to Python-defined AppManifest discovery
-    try:
-        from appmanager_sdk.generator import load_manifest_from_module
-
-        for cand in ["app.py", "wsgi.py", "main.py", "run.py"]:
-            cand_path = os.path.join(app_dir, cand)
-            if os.path.exists(cand_path):
-                py_manifest, _ = load_manifest_from_module(cand_path, base_dir=app_dir)
-                if py_manifest:
-                    return py_manifest.to_dict()
-    except Exception as e:
-        print(f"[INSTALLER WARNING] Python manifest auto-discovery error at {app_dir}: {e}")
-
-    return None
+    manifest = load_manifest(app_dir)
+    return manifest or None
 
 
 def normalize_and_flatten_app_dir(target_dir: str) -> None:
@@ -296,9 +279,25 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
 
     mod = importlib.util.module_from_spec(spec)
     sys.modules[scoped_module_name] = mod
+
+    # Import isolation: restore ``sys.path`` afterwards AND evict any top-level
+    # module names the app introduced (``helper``, ``submod``, ...). Restoring the
+    # path alone is not enough — Python resolves from ``sys.modules`` first, so a
+    # second app shipping its own ``helper.py`` would silently receive the first
+    # app's already-cached ``helper``. This makes the cache match the path: what
+    # an app imports, it imports from its own directory and nowhere else.
+    original_path = sys.path[:]
+    original_modules = set(sys.modules)
     if app_dir not in sys.path:
         sys.path.insert(0, app_dir)
-    spec.loader.exec_module(mod)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = original_path
+        for name in set(sys.modules) - original_modules:
+            if name == scoped_module_name or name.startswith(scoped_module_name + "."):
+                continue  # keep the entry module itself, it is returned to the caller
+            sys.modules.pop(name, None)
 
     # Check for Flask app instance, callable create_app factory, or WSGI middleware
     if hasattr(mod, app_var_name):
@@ -333,6 +332,23 @@ def load_wsgi_app_from_path(app_dir: str, entry_point: str = "app:app") -> Any:
         return app_obj
 
     raise AttributeError(f"Module '{module_name}' in {app_dir} does not export '{app_var_name}'")
+
+
+def purge_installed_app_modules(slug: str) -> int:
+    """
+    Remove every ``appmanager.installed.<slug>*`` module from ``sys.modules``.
+
+    Reload re-executes the entry module, but submodules it imported on the
+    previous load (``...<slug>.routes``, ``...<slug>.models``) stay cached and
+    keep serving old code. Purge the whole subtree so a reload is a real reload.
+
+    Returns the number of modules evicted.
+    """
+    prefix = f"appmanager.installed.{slug}"
+    stale = [name for name in list(sys.modules) if name == prefix or name.startswith(prefix + ".")]
+    for name in stale:
+        sys.modules.pop(name, None)
+    return len(stale)
 
 
 # In-memory staging storage: staging_id -> dict of staged info

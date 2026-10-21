@@ -1085,9 +1085,12 @@ def generate_tokens_cli(nbytes: int = 32, fmt: str = "urlsafe", env_format: bool
     return 0
 
 
-def run_server(host="0.0.0.0", port=5000, reload=True):
+def run_server(host="0.0.0.0", port=5000, reload=True):  # nosec B104 - local dev server
     """
     Starts the WSGI Dynamic Dispatcher local development server.
+
+    Binds all interfaces by default for convenience; deploy behind a real WSGI
+    server (gunicorn/uWSGI) in production and bind explicitly there.
     """
     from werkzeug.serving import run_simple
 
@@ -1114,7 +1117,7 @@ def main(args=None):
     run_parser = subparsers.add_parser("run", help="Start the development WSGI dispatcher server")
     run_parser.add_argument(
         "--host",
-        default=os.getenv("HOST", "0.0.0.0"),
+        default=os.getenv("HOST", "0.0.0.0"),  # nosec B104 - dev server default
         help="Host to bind server (default: 0.0.0.0)",
     )
     run_parser.add_argument(

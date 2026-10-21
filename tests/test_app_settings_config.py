@@ -7,6 +7,7 @@ from appmanager.auth.utils import JWT_COOKIE_NAME, generate_jwt
 from appmanager.bridge import get_app_settings
 from appmanager.database import db
 from appmanager.models import InstalledApp, User
+from tests.csrf_helpers import post_with_csrf
 
 
 @pytest.fixture
@@ -43,8 +44,10 @@ def test_admin_update_app_settings_route(app):
 
         # Update settings via POST
         new_settings = {"theme": "dark", "max_items": 50, "enable_notifications": True}
-        res = client.post(
+        res = post_with_csrf(
+            client,
             f"/admin/apps/{app_rec.id}/settings",
+            user=admin,
             data={"settings_json": json.dumps(new_settings)},
             follow_redirects=True,
         )
@@ -68,8 +71,10 @@ def test_admin_update_invalid_json_settings(app):
 
         client.set_cookie(JWT_COOKIE_NAME, generate_jwt(admin))
 
-        res = client.post(
+        res = post_with_csrf(
+            client,
             f"/admin/apps/{app_rec.id}/settings",
+            user=admin,
             data={"settings_json": "invalid-json-{here"},
             follow_redirects=True,
         )

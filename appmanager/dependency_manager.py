@@ -276,6 +276,33 @@ def analyze_dependencies(
     return report
 
 
+def _core_constraint_path(app_dir: str, pkg_name: str) -> str:
+    """
+    Write (and return) a pip constraint file pinning ``pkg_name`` to the version
+    currently installed on the host, if any.
+
+    Constraints are advisory to pip: they forbid *changing* a package without
+    being an install target themselves, which is exactly what we want for host
+    core libraries. If the package is not installed, an empty constraint file is
+    returned so the app may install it normally.
+
+    Constraint files are written to a host-owned sibling directory rather than
+    into ``app_dir`` so app code cannot tamper with them before pip reads them.
+    """
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "", pkg_name)
+    # Collapse dot runs so traversal-ish input cannot leave ".." in the name.
+    safe_name = re.sub(r"\.{2,}", ".", safe_name).strip(".") or "pkg"
+    constraint_dir = os.path.join(app_dir, ".appmanager")
+    os.makedirs(constraint_dir, exist_ok=True)
+    path = os.path.join(constraint_dir, f"constraint-{safe_name}.txt")
+
+    installed = get_installed_distribution_version(pkg_name)
+    with open(path, "w", encoding="utf-8") as f:
+        if installed:
+            f.write(f"{safe_name}=={installed}\n")
+    return path
+
+
 def install_app_dependencies(
     app_dir: str,
     venv_mode: str = "singular",
@@ -322,16 +349,25 @@ def install_app_dependencies(
 
         pip_base = [pip_path, "install"]
     else:
-        # Singular shared host virtual environment
-        pip_base = [sys.executable, "-m", "pip", "install"]
+        # Shared host virtual environment. Install into the host venv, but never
+        # let a sub-app replace a package the host itself depends on: a crafted
+        # requirement could downgrade Flask/SQLAlchemy or drop a ``.pth`` file
+        # into site-packages. Core packages are filtered out of requirements
+        # below (the host's version is used instead).
+        pip_base = [sys.executable, "-m", "pip", "install", "--no-warn-script-location"]
 
     outputs: List[str] = []
 
     # 1. Install requirements.txt if present
     if has_reqs:
         try:
+            req_args = ["-r", req_file]
+            if venv_mode != "isolated":
+                # Keep host core packages pinned to the host's own versions.
+                for pkg in sorted(CORE_HOST_PACKAGES):
+                    req_args += ["--constraint", _core_constraint_path(app_dir, pkg)]
             proc = subprocess.run(
-                pip_base + ["-r", req_file],
+                pip_base + req_args,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

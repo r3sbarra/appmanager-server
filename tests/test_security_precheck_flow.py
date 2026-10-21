@@ -2,6 +2,7 @@ import io
 import json
 import os
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from appmanager.admin.app_installer import (
 from appmanager.auth.utils import JWT_COOKIE_NAME, generate_jwt
 from appmanager.database import db
 from appmanager.models import InstalledApp, User
+from tests.csrf_helpers import post_with_csrf
 
 
 @pytest.fixture
@@ -53,7 +55,10 @@ def auth_client(client, app):
     with app.app_context():
         admin = User.query.filter_by(email="admin@example.com").first()
         token = generate_jwt(admin)
+        admin_id = admin.id
     client.set_cookie(JWT_COOKIE_NAME, token)
+    # Expose the id so posts can mint CSRF tokens bound to this session.
+    client.appmanager_admin_id = admin_id
     return client
 
 
@@ -99,8 +104,10 @@ def test_precheck_zip_endpoint_clean_app(auth_client):
         "name": "Test Precheck App",
         "slug": "test-precheck-app",
     }
-    resp = auth_client.post(
+    resp = post_with_csrf(
+        auth_client,
         "/admin/apps/precheck-zip",
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
         data=data,
         content_type="multipart/form-data",
     )
@@ -114,7 +121,12 @@ def test_precheck_zip_endpoint_clean_app(auth_client):
 
     staging_id = res_json["staging_id"]
     # Confirm installation
-    confirm_resp = auth_client.post("/admin/apps/install-confirm", json={"staging_id": staging_id})
+    confirm_resp = post_with_csrf(
+        auth_client,
+        "/admin/apps/install-confirm",
+        json={"staging_id": staging_id},
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
+    )
     assert confirm_resp.status_code == 200
     confirm_json = confirm_resp.get_json()
     assert confirm_json["success"] is True
@@ -128,8 +140,10 @@ def test_precheck_zip_endpoint_malicious_app_detection_and_cancel(auth_client):
         "name": "Malicious App",
         "slug": "malicious-app",
     }
-    resp = auth_client.post(
+    resp = post_with_csrf(
+        auth_client,
         "/admin/apps/precheck-zip",
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
         data=data,
         content_type="multipart/form-data",
     )
@@ -142,7 +156,12 @@ def test_precheck_zip_endpoint_malicious_app_detection_and_cancel(auth_client):
 
     staging_id = res_json["staging_id"]
     # Cancel installation
-    cancel_resp = auth_client.post("/admin/apps/cancel-staged", json={"staging_id": staging_id})
+    cancel_resp = post_with_csrf(
+        auth_client,
+        "/admin/apps/cancel-staged",
+        json={"staging_id": staging_id},
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
+    )
     assert cancel_resp.status_code == 200
     assert cancel_resp.get_json()["success"] is True
     assert staging_id not in _staged_installations
@@ -218,8 +237,10 @@ def test_macos_zip_with_nested_folder_and_resource_forks(auth_client):
         "name": "Music Player",
         "slug": "music-player",
     }
-    resp = auth_client.post(
+    resp = post_with_csrf(
+        auth_client,
         "/admin/apps/precheck-zip",
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
         data=data,
         content_type="multipart/form-data",
     )
@@ -231,8 +252,11 @@ def test_macos_zip_with_nested_folder_and_resource_forks(auth_client):
     assert res_json["slug"] == "music-player"
 
     # Confirm installation
-    confirm_resp = auth_client.post(
-        "/admin/apps/install-confirm", json={"staging_id": res_json["staging_id"]}
+    confirm_resp = post_with_csrf(
+        auth_client,
+        "/admin/apps/install-confirm",
+        json={"staging_id": res_json["staging_id"]},
+        user=SimpleNamespace(id=auth_client.appmanager_admin_id),
     )
     assert confirm_resp.status_code == 200
     assert confirm_resp.get_json()["success"] is True

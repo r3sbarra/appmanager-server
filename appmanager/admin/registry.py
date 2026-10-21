@@ -42,16 +42,18 @@ from appmanager.models import AppAdminPanel, InstalledApp
 
 
 def parse_manifest(app_dir):
-    """Parse manifest.json from an installed app's directory."""
-    manifest_path = os.path.join(app_dir, "manifest.json")
-    if not os.path.exists(manifest_path):
-        return {}
-    try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    """
+    Parse the effective manifest for an installed app's directory.
+
+    Delegates to :func:`appmanager.manifest.load_manifest`, the single reader.
+    Returns ``{}`` when the app declares nothing (this module's historical
+    contract), and — importantly — now sees Python-defined manifests too, which
+    this function previously ignored (they worked at install, then vanished from
+    the admin UI).
+    """
+    from appmanager.manifest import load_manifest
+
+    return load_manifest(app_dir)
 
 
 def app_dir_for(app_record):
@@ -245,7 +247,9 @@ def render_settings_form(app_record, configs):
         value = configs.get(key, desc.get("default"))
         rows.append(_schema_field(key, label, vtype, value, desc))
     body = "\n".join(rows)
-    return Markup(
+    # ``body`` is built from ``_schema_field`` which escapes every value/slug;
+    # ``app_record.slug`` is validated on install against VALID_SLUG_PATTERN.
+    return Markup(  # nosec B704 - all interpolated fields are escaped or slug-validated
         f'<form method="POST" action="/admin/apps/{app_record.slug}/settings" class="schema-form">'
         f'<input type="hidden" name="csrf_token" value="{_csrf()}">'
         f"{body}"

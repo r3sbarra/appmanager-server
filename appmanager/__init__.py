@@ -3,7 +3,7 @@ from typing import Optional
 from flask import Flask
 
 from appmanager import hooks, sdk, signals
-from appmanager.config import Config
+from appmanager.config import Config, enforce_secure_secrets
 from appmanager.database import db
 from appmanager.extension import AppManager
 from appmanager.middleware import DynamicAppDispatcherMiddleware
@@ -34,6 +34,9 @@ def create_app(config_class=Config) -> Flask:
         app.config.from_mapping(config_class)
     elif config_class and config_class != Config:
         app.config.from_object(config_class)
+
+    # Fail fast in production when development secrets are still in place.
+    enforce_secure_secrets(app)
 
     # Initialize via AppManager extension
     AppManager(app)

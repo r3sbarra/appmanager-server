@@ -23,6 +23,7 @@ from appmanager.host_settings import (
 )
 from appmanager.middleware import DynamicAppDispatcherMiddleware
 from appmanager.models import InstalledApp, User, UserAppPermission
+from tests.csrf_helpers import post_with_csrf
 
 
 def _make_app(tmp_path):
@@ -256,8 +257,10 @@ def test_settings_save_persists(tmp_path):
         admin = db.session.get(User, admin_id)
         client = app.test_client()
         client.set_cookie(JWT_COOKIE_NAME, generate_jwt(admin))
-        res = client.post(
+        res = post_with_csrf(
+            client,
             "/admin/settings",
+            user=admin,
             data={
                 "seo_enabled": "on",
                 "seo_portal_title": "My Portal",

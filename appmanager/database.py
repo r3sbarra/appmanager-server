@@ -92,6 +92,16 @@ def init_db(app):
                         conn.execute(text("ALTER TABLE installed_apps ADD COLUMN seo_json_ld TEXT"))
                         conn.commit()
 
+                if "users" in tables:
+                    user_columns = [c["name"] for c in inspector.get_columns("users")]
+                    if "token_version" not in user_columns:
+                        conn.execute(
+                            text(
+                                "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0 NOT NULL"
+                            )
+                        )
+                        conn.commit()
+
                 # Ensure the app_db_permissions table exists (created by db.create_all()
                 # for fresh DBs; this is a safety net for existing DBs).
                 if "app_db_permissions" not in tables:

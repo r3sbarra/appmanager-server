@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 from appmanager import create_app
 from appmanager.auth.utils import JWT_COOKIE_NAME, generate_jwt
 from appmanager.cli import create_role_cli, list_roles_cli, set_user_role
 from appmanager.database import db
 from appmanager.models import Role, User
+from tests.csrf_helpers import post_with_csrf
 
 
 def test_role_model_and_seeding(tmp_path):
@@ -42,9 +45,17 @@ def test_admin_role_management_routes(tmp_path):
         db.session.add(admin)
         db.session.commit()
         admin_token = generate_jwt(admin)
+        admin_id = admin.id
 
     client = app.test_client()
     client.set_cookie(JWT_COOKIE_NAME, admin_token)
+
+    def _admin():
+        """Return the admin's id (the ORM instance expires when its context closes).
+
+        Only ``id`` is needed, and reading it must not require a live app context.
+        """
+        return SimpleNamespace(id=admin_id)
 
     # 1. View roles page
     res = client.get("/admin/roles")
@@ -52,8 +63,10 @@ def test_admin_role_management_routes(tmp_path):
     assert "Role Management" in res.get_data(as_text=True)
 
     # 2. Create custom role
-    res = client.post(
+    res = post_with_csrf(
+        client,
         "/admin/roles/create",
+        user=_admin(),
         data={
             "name": "Data Analyst",
             "slug": "analyst",
@@ -79,8 +92,10 @@ def test_admin_role_management_routes(tmp_path):
         analyst_id = analyst.id
 
     # 3. Edit custom role
-    res = client.post(
+    res = post_with_csrf(
+        client,
         f"/admin/roles/{analyst_id}/edit",
+        user=_admin(),
         data={"name": "Senior Data Analyst", "description": "Senior analytics team member."},
         follow_redirects=True,
     )
@@ -91,7 +106,9 @@ def test_admin_role_management_routes(tmp_path):
         assert updated_analyst.name == "Senior Data Analyst"
 
     # 4. Delete custom role (should reassign user to 'user')
-    res = client.post(f"/admin/roles/{analyst_id}/delete", follow_redirects=True)
+    res = post_with_csrf(
+        client, f"/admin/roles/{analyst_id}/delete", user=_admin(), follow_redirects=True
+    )
     assert res.status_code == 200
     assert "Deleted role" in res.get_data(as_text=True)
 
@@ -105,7 +122,9 @@ def test_admin_role_management_routes(tmp_path):
         admin_role = Role.query.filter_by(slug="admin").first()
         admin_role_id = admin_role.id
 
-    res = client.post(f"/admin/roles/{admin_role_id}/delete", follow_redirects=True)
+    res = post_with_csrf(
+        client, f"/admin/roles/{admin_role_id}/delete", user=_admin(), follow_redirects=True
+    )
     assert res.status_code == 200
     assert "Cannot delete system role" in res.get_data(as_text=True)
 

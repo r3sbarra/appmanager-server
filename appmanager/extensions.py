@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from appmanager.database import db
 from appmanager.hooks import hooks, render_slot
@@ -168,13 +168,30 @@ def render_user_flair_badge(user_id):
     flair = get_user_flair(user_id)
     if flair and flair.get("title"):
         title = flair.get("title")
-        color = flair.get("color", "#38bdf8")
-        return Markup(
+        color = _safe_flair_color(flair.get("color", "#38bdf8"))
+        # title is escaped; color is validated against a hex/named-color allowlist.
+        return Markup(  # nosec B704 - interpolated values are escaped/validated above
             f'<span class="badge" style="background-color: {color}22; color: {color}; border: 1px solid {color}44; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px;">'
-            f"{title}"
+            f"{escape(title)}"
             f"</span>"
         )
     return Markup("")
+
+
+def _safe_flair_color(value: object) -> str:
+    """Return a CSS-safe color, falling back to the default on anything else.
+
+    Guards against CSS/attribute injection through the admin-supplied color.
+    Accepts ``#rgb``/``#rrggbb`` hex or a simple ``rgb()``/named-color token.
+    """
+    import re
+
+    candidate = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?", candidate):
+        return candidate
+    if re.fullmatch(r"[a-zA-Z]{3,20}", candidate):
+        return candidate  # named CSS color e.g. 'red', 'goldenrod'
+    return "#38bdf8"
 
 
 def render_sparkline(health_logs):
@@ -194,7 +211,7 @@ def render_sparkline(health_logs):
         '<span class="sparkline" title="Health history (oldest → newest)">'
         + "".join(out)
         + "</span>"
-    )
+    )  # nosec B704 - status maps to a fixed braille glyph set above
 
 
 def init_extensions(app):

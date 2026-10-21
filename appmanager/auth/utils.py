@@ -19,6 +19,7 @@ def generate_jwt(user):
         "user_id": user.id,
         "email": user.email,
         "role": user.role,
+        "tv": getattr(user, "token_version", 0) or 0,
         "exp": datetime.now(timezone.utc) + current_app.config["JWT_ACCESS_TOKEN_EXPIRES"],
         "iat": datetime.now(timezone.utc),
     }
@@ -32,6 +33,26 @@ def decode_jwt(token):
         return payload
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
+
+
+def bump_token_version(user) -> int:
+    """Invalidate all outstanding JWTs for ``user``.
+
+    Call on logout, deactivation, or privilege change so a stolen or replayed
+    cookie stops working immediately instead of living out its 7-day window.
+    """
+    user.token_version = (getattr(user, "token_version", 0) or 0) + 1
+    db.session.commit()
+    return user.token_version
+
+
+def _token_version_valid(payload, user) -> bool:
+    """Reject tokens minted before the user's current token version.
+
+    Tokens without a ``tv`` claim are treated as version 0 for backward
+    compatibility with sessions issued before this field existed.
+    """
+    return payload.get("tv", 0) == (getattr(user, "token_version", 0) or 0)
 
 
 def get_current_user():
@@ -58,7 +79,7 @@ def get_current_user():
         return None
 
     user = db.session.get(User, payload["user_id"])
-    if user and user.is_active:
+    if user and user.is_active and _token_version_valid(payload, user):
         # Update last_active_at timestamp (throttled to once per minute)
         now = datetime.now(timezone.utc)
         last_act = user.last_active_at

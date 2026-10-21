@@ -38,6 +38,10 @@ class User(db.Model):
     last_active_at = db.Column(db.DateTime, nullable=True)
     login_count = db.Column(db.Integer, default=0, nullable=False)
     last_ip = db.Column(db.String(100), nullable=True)
+    # Bumped to invalidate every outstanding JWT for this user (logout,
+    # deactivation, role change, password rotation). Tokens carry the value
+    # they were minted with and are rejected once it no longer matches.
+    token_version = db.Column(db.Integer, default=0, nullable=False)
 
     permissions = db.relationship("UserAppPermission", backref="user", cascade="all, delete-orphan")
 

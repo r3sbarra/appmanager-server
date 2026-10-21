@@ -76,9 +76,14 @@ def seed_defaults(app_id, schema):
 
 def migrate_from_settings_json(app_id=None):
     """
-    One-time migration: parse each app's legacy `settings_json` blob and seed
-    `app_configs` rows. Idempotent — skips apps that already have config rows.
-    Returns number of apps migrated.
+    Migrate legacy ``settings_json`` blobs into typed ``app_configs`` rows.
+
+    Key-level idempotency: a key is migrated only if no ``AppConfig`` row exists
+    for it yet. The previous version skipped an app entirely once it had *any*
+    config row, so a blob key added later was never migrated — and the app then
+    read a stale value from the blob forever.
+
+    Returns the number of apps that had at least one key migrated.
     """
     query = InstalledApp.query
     if app_id is not None:
@@ -86,17 +91,24 @@ def migrate_from_settings_json(app_id=None):
     apps = query.all()
     migrated = 0
     for a in apps:
-        existing = AppConfig.query.filter_by(app_id=a.id).first()
-        if existing is not None:
-            continue
         settings = a.get_settings()
         if not settings:
             continue
+
+        existing_keys = {row.key for row in AppConfig.query.filter_by(app_id=a.id).all()}
+        added_any = False
         for key, value in settings.items():
-            row = AppConfig(app_id=a.id, key=str(key), value_type="json")
+            key = str(key)
+            if key in existing_keys:
+                continue
+            row = AppConfig(app_id=a.id, key=key, value_type="json")
             row.set_value(value)
             db.session.add(row)
-        migrated += 1
+            existing_keys.add(key)
+            added_any = True
+
+        if added_any:
+            migrated += 1
     db.session.commit()
     return migrated
 
