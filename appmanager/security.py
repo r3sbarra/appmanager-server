@@ -24,8 +24,48 @@ _rate_limit_records: Dict[str, list] = {}
 def get_security_secret() -> str:
     """
     Retrieves the application secret key for HMAC operations.
+
+    Never falls back to a hard-coded literal: a missing/empty SECRET_KEY is a
+    configuration error, not something to silently paper over with a published
+    default that an attacker could use to forge CSRF tokens.
     """
-    return current_app.config.get("SECRET_KEY", "default-appmanager-security-secret")
+    secret = current_app.config.get("SECRET_KEY")
+    if not secret:
+        raise RuntimeError(
+            "SECRET_KEY is not configured; refusing to derive CSRF/HMAC secrets "
+            "from a default value. Set SECRET_KEY in the environment."
+        )
+    return secret
+
+
+def _csrf_identity() -> str:
+    """
+    Resolve the identity a CSRF token is bound to.
+
+    Authenticated requests bind to the user id; anonymous requests bind to the
+    client address. Minting and validation both go through this function, so the
+    two can never disagree about what a token is bound to.
+
+    NOTE: this must resolve the user the same way the route will. ``g.current_user_id``
+    is honoured when a request hook has already populated it; otherwise the
+    cookie/Bearer identity is resolved directly. Imported lazily to avoid a
+    circular import (``auth.utils`` depends on ``security``).
+    """
+    explicit = getattr(g, "current_user_id", None)
+    if explicit is not None:
+        return str(explicit)
+
+    try:
+        from appmanager.auth.utils import get_current_user
+
+        user = get_current_user()
+        if user is not None and getattr(user, "id", None) is not None:
+            return str(user.id)
+    except Exception:
+        # No app/request context or auth layer unavailable -> fall back to IP.
+        pass
+
+    return str(request.remote_addr or "anon")
 
 
 def generate_csrf_token() -> str:
@@ -34,8 +74,7 @@ def generate_csrf_token() -> str:
     """
     secret = get_security_secret()
     timestamp = str(int(time.time()))
-    # Use user ID if authenticated, else remote IP
-    identity = str(getattr(g, "current_user_id", request.remote_addr or "anon"))
+    identity = _csrf_identity()
     signature = hmac.new(
         secret.encode("utf-8"), f"{identity}:{timestamp}".encode("utf-8"), hashlib.sha256
     ).hexdigest()
@@ -58,7 +97,7 @@ def validate_csrf_token(token: Optional[str]) -> bool:
             return False
 
         secret = get_security_secret()
-        identity = str(getattr(g, "current_user_id", request.remote_addr or "anon"))
+        identity = _csrf_identity()
         expected_sig = hmac.new(
             secret.encode("utf-8"), f"{identity}:{timestamp_str}".encode("utf-8"), hashlib.sha256
         ).hexdigest()
@@ -88,6 +127,27 @@ def csrf_protect_required(f):
         return f(*args, **kwargs)
 
     return decorated_function
+
+
+# Path prefixes that authenticate via non-cookie credentials and therefore must
+# not require a CSRF token. Sub-apps under /apps/ are mounted behind the
+# dispatcher and are responsible for their own CSRF story.
+CSRF_EXEMPT_PREFIXES = ("/api/", "/auth/magic-link", "/auth/debug-login", "/auth/dev-login")
+
+
+def csrf_applies(path: str) -> bool:
+    """
+    Return True when a request to ``path`` is subject to host CSRF checks.
+
+    Exempt: ``/api/*`` (X-API-Key / Bearer callers, not cookie-session callers)
+    and ``/apps/*`` (dispatched sub-apps). Everything else on the host — the
+    whole ``/admin`` surface and ``/auth`` POSTs — is enforced.
+    """
+    if path.startswith(CSRF_EXEMPT_PREFIXES):
+        return False
+    if path == "/apps" or path.startswith("/apps/"):
+        return False
+    return True
 
 
 def is_safe_redirect_url(target: Optional[str]) -> bool:

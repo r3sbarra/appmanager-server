@@ -28,6 +28,17 @@ logger = logging.getLogger("appmanager.auth")
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
+def is_debug_login_enabled() -> bool:
+    import os
+    cfg = current_app.config.get("DEBUG_LOGIN")
+    if cfg is not None:
+        return bool(cfg)
+    dev_magic = current_app.config.get("ALLOW_DEV_MAGIC_LOGIN")
+    if dev_magic is not None:
+        return bool(dev_magic)
+    return os.getenv("DEBUG_LOGIN", os.getenv("ALLOW_DEV_LOGIN", "false")).lower() in ("true", "1", "yes")
+
+
 @auth_bp.route("/login", methods=["GET"])
 def login():
     user = get_current_user()
@@ -38,7 +49,83 @@ def login():
     if next_url and not is_safe_redirect_url(next_url):
         next_url = ""
     google_configured = bool(current_app.config.get("GOOGLE_CLIENT_ID"))
-    return render_template("auth/login.html", next=next_url, google_configured=google_configured)
+
+    debug_login_enabled = is_debug_login_enabled()
+    debug_users = []
+    if debug_login_enabled:
+        debug_users = User.query.order_by(User.id).limit(10).all()
+
+    return render_template(
+        "auth/login.html",
+        next=next_url,
+        google_configured=google_configured,
+        debug_login_enabled=debug_login_enabled,
+        debug_users=debug_users,
+    )
+
+
+@auth_bp.route("/debug-login", methods=["GET", "POST"])
+@auth_bp.route("/dev-login", methods=["GET", "POST"])
+def debug_login():
+    if not is_debug_login_enabled():
+        flash("Debug login is disabled in this environment. Set DEBUG_LOGIN=true in .env to enable.", "danger")
+        return redirect(url_for("auth.login"))
+
+    email = request.values.get("email", "").strip().lower()
+    role_req = request.values.get("role", "admin").strip().lower()
+    next_url = request.values.get("next", "")
+    if next_url and not is_safe_redirect_url(next_url):
+        next_url = ""
+
+    user = None
+    if email:
+        user = User.query.filter_by(email=email).first()
+
+    if not user:
+        if role_req == "admin":
+            user = User.query.filter_by(role="admin").first()
+        if not user:
+            default_email = current_app.config.get("DEBUG_LOGIN_DEFAULT_EMAIL", "admin@appmanager.local")
+            target_email = email or default_email
+            user = User.query.filter_by(email=target_email).first()
+            if not user:
+                user_role = role_req if role_req in ("admin", "user") else "admin"
+                user = User(
+                    email=target_email,
+                    name=target_email.split("@")[0].capitalize(),
+                    role=user_role,
+                )
+                db.session.add(user)
+                db.session.commit()
+                for app_rec in InstalledApp.query.filter_by(is_active=True).all():
+                    db.session.add(UserAppPermission(user_id=user.id, app_id=app_rec.id, can_access=True))
+                db.session.commit()
+
+    if role_req == "admin" and user.role != "admin":
+        user.role = "admin"
+        db.session.commit()
+
+    # Track login metrics
+    user.last_login_at = datetime.now(timezone.utc)
+    user.last_active_at = datetime.now(timezone.utc)
+    user.login_count = (user.login_count or 0) + 1
+    user.last_ip = request.remote_addr
+    db.session.commit()
+
+    jwt_token = generate_jwt(user)
+    flash(f"⚡ Logged in via Debug Login as {user.email} ({user.role})", "success")
+
+    dest = next_url if next_url else url_for("auth.profile")
+    response = make_response(redirect(dest))
+    response.set_cookie(
+        JWT_COOKIE_NAME,
+        jwt_token,
+        httponly=True,
+        samesite=current_app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),
+        secure=current_app.config.get("SESSION_COOKIE_SECURE", False),
+        max_age=7 * 24 * 3600,
+    )
+    return response
 
 
 def resolve_initial_user_role(email: str) -> str:
@@ -239,6 +326,13 @@ def google_callback():
 
 @auth_bp.route("/logout")
 def logout():
+    # Invalidate outstanding tokens for this user so a copied cookie cannot be
+    # replayed after logout.
+    user = get_current_user()
+    if user:
+        from appmanager.auth.utils import bump_token_version
+
+        bump_token_version(user)
     flash("Logged out successfully.", "info")
     response = make_response(redirect(url_for("auth.login")))
     response.delete_cookie(JWT_COOKIE_NAME)

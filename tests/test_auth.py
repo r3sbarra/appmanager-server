@@ -32,16 +32,24 @@ def client(app):
     return app.test_client()
 
 
-def test_magic_link_fails_without_terms_acceptance(client):
-    res = client.post("/auth/magic-link", data={"email": "test@example.com"}, follow_redirects=True)
+def test_magic_link_fails_without_terms_acceptance(app, client):
+    from tests.csrf_helpers import post_with_csrf
+
+    res = post_with_csrf(
+        client, "/auth/magic-link", data={"email": "test@example.com"}, follow_redirects=True
+    )
     assert res.status_code == 200
     assert b"You must agree to the Terms of Use and Privacy Policy" in res.data
 
 
 def test_magic_link_flow_dev_mode(client, app):
     # 1. Request magic link with ALLOW_DEV_MAGIC_LOGIN=True
-    res = client.post(
-        "/auth/magic-link", data={"email": "test@example.com", "accept_terms": "true"}
+    from tests.csrf_helpers import post_with_csrf
+
+    res = post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={"email": "test@example.com", "accept_terms": "true"},
     )
     assert res.status_code == 200
     assert b"Developer Mode Preview" in res.data
@@ -69,7 +77,10 @@ def test_magic_link_fails_when_smtp_and_dev_mode_disabled(app):
     app.config["SMTP_SERVER"] = ""
     client = app.test_client()
 
-    res = client.post(
+    from tests.csrf_helpers import post_with_csrf
+
+    res = post_with_csrf(
+        client,
         "/auth/magic-link",
         data={"email": "user@example.com", "accept_terms": "true"},
         follow_redirects=True,
@@ -88,7 +99,13 @@ def test_admin_emails_config_provisioning(client, app):
     app.config["FIRST_USER_IS_ADMIN"] = False
 
     # First user who is NOT in ADMIN_EMAILS
-    client.post("/auth/magic-link", data={"email": "regular@example.com", "accept_terms": "true"})
+    from tests.csrf_helpers import post_with_csrf
+
+    post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={"email": "regular@example.com", "accept_terms": "true"},
+    )
     with app.app_context():
         t1 = MagicLinkToken.query.filter_by(email="regular@example.com").first()
         token1 = t1.token
@@ -100,8 +117,10 @@ def test_admin_emails_config_provisioning(client, app):
         assert u1.role == "user"
 
     # Second user who IS in ADMIN_EMAILS
-    client.post(
-        "/auth/magic-link", data={"email": "designated-admin@example.com", "accept_terms": "true"}
+    post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={"email": "designated-admin@example.com", "accept_terms": "true"},
     )
     with app.app_context():
         t2 = MagicLinkToken.query.filter_by(email="designated-admin@example.com").first()
@@ -123,10 +142,13 @@ def test_second_user_is_regular_user(client, app):
         db.session.commit()
 
     # Request & verify magic link for second user
-    client.post(
+    from tests.csrf_helpers import post_with_csrf
+
+    post_with_csrf(
+        client,
         "/auth/magic-link",
         data={"email": "user2@example.com", "accept_terms": "true"},
-        environ_base={"REMOTE_ADDR": "127.0.0.99"},
+        remote_addr="127.0.0.99",
     )
     with app.app_context():
         t = MagicLinkToken.query.filter_by(email="user2@example.com").first()
@@ -137,3 +159,42 @@ def test_second_user_is_regular_user(client, app):
         u2 = User.query.filter_by(email="user2@example.com").first()
         assert u2 is not None
         assert u2.role == "user"
+
+
+def test_magic_link_no_csrf_error_without_token(client, app):
+    """Submitting /auth/magic-link directly without CSRF token must not fail with 400."""
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = True
+    res = client.post(
+        "/auth/magic-link",
+        data={"email": "direct@example.com", "accept_terms": "true"},
+        environ_base={"REMOTE_ADDR": "127.0.0.123"},
+    )
+    assert res.status_code == 200
+    assert b"Developer Mode Preview" in res.data
+    assert b"CSRF validation failed" not in res.data
+
+
+def test_debug_login_direct_flow(client, app):
+    """Debug login allows 1-click admin authentication when DEBUG_LOGIN=True."""
+    app.config["DEBUG_LOGIN"] = True
+    from appmanager.auth.utils import JWT_COOKIE_NAME
+
+    # 1. Direct GET dev-login as admin
+    res = client.get("/auth/debug-login?role=admin&email=devadmin@test.com", follow_redirects=False)
+    assert res.status_code == 302
+    assert JWT_COOKIE_NAME in res.headers.get("Set-Cookie", "")
+
+    # 2. Check user created in DB with admin role
+    with app.app_context():
+        u = User.query.filter_by(email="devadmin@test.com").first()
+        assert u is not None
+        assert u.role == "admin"
+
+
+def test_debug_login_disabled_when_config_false(client, app):
+    """Debug login fails cleanly when DEBUG_LOGIN and ALLOW_DEV_MAGIC_LOGIN are False."""
+    app.config["DEBUG_LOGIN"] = False
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = False
+    res = client.get("/auth/debug-login", follow_redirects=False)
+    assert res.status_code == 302
+    assert "/auth/login" in res.headers.get("Location", "")
