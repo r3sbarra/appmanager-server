@@ -30,13 +30,18 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 def is_debug_login_enabled() -> bool:
     import os
+
     cfg = current_app.config.get("DEBUG_LOGIN")
     if cfg is not None:
         return bool(cfg)
     dev_magic = current_app.config.get("ALLOW_DEV_MAGIC_LOGIN")
     if dev_magic is not None:
         return bool(dev_magic)
-    return os.getenv("DEBUG_LOGIN", os.getenv("ALLOW_DEV_LOGIN", "false")).lower() in ("true", "1", "yes")
+    return os.getenv("DEBUG_LOGIN", os.getenv("ALLOW_DEV_LOGIN", "false")).lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
 
 @auth_bp.route("/login", methods=["GET"])
@@ -68,7 +73,10 @@ def login():
 @auth_bp.route("/dev-login", methods=["GET", "POST"])
 def debug_login():
     if not is_debug_login_enabled():
-        flash("Debug login is disabled in this environment. Set DEBUG_LOGIN=true in .env to enable.", "danger")
+        flash(
+            "Debug login is disabled in this environment. Set DEBUG_LOGIN=true in .env to enable.",
+            "danger",
+        )
         return redirect(url_for("auth.login"))
 
     email = request.values.get("email", "").strip().lower()
@@ -85,7 +93,9 @@ def debug_login():
         if role_req == "admin":
             user = User.query.filter_by(role="admin").first()
         if not user:
-            default_email = current_app.config.get("DEBUG_LOGIN_DEFAULT_EMAIL", "admin@appmanager.local")
+            default_email = current_app.config.get(
+                "DEBUG_LOGIN_DEFAULT_EMAIL", "admin@appmanager.local"
+            )
             target_email = email or default_email
             user = User.query.filter_by(email=target_email).first()
             if not user:
@@ -98,7 +108,9 @@ def debug_login():
                 db.session.add(user)
                 db.session.commit()
                 for app_rec in InstalledApp.query.filter_by(is_active=True).all():
-                    db.session.add(UserAppPermission(user_id=user.id, app_id=app_rec.id, can_access=True))
+                    db.session.add(
+                        UserAppPermission(user_id=user.id, app_id=app_rec.id, can_access=True)
+                    )
                 db.session.commit()
 
     if role_req == "admin" and user.role != "admin":
