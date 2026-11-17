@@ -199,9 +199,7 @@ class InstalledApp(db.Model):
 
             serialized = json.dumps(json_ld)
             self.seo_json_ld = (
-                serialized.replace("<", "\\u003c")
-                .replace(">", "\\u003e")
-                .replace("&", "\\u0026")
+                serialized.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
             )
         else:
             self.seo_json_ld = None
