@@ -186,12 +186,23 @@ class InstalledApp(db.Model):
         self.seo_og_image = seo_dict.get("og_image")
         self.seo_robots = seo_dict.get("robots")
         json_ld = seo_dict.get("json_ld")
+        if isinstance(json_ld, str):
+            import json
+
+            try:
+                json_ld = json.loads(json_ld)
+            except (ValueError, TypeError):
+                json_ld = None
+
         if isinstance(json_ld, (dict, list)):
             import json
 
-            self.seo_json_ld = json.dumps(json_ld)
-        elif isinstance(json_ld, str):
-            self.seo_json_ld = json_ld
+            serialized = json.dumps(json_ld)
+            self.seo_json_ld = (
+                serialized.replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026")
+            )
         else:
             self.seo_json_ld = None
 

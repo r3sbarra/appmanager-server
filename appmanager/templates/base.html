@@ -17,7 +17,7 @@
             {% if seo.og_type %}<meta property="og:type" content="{{ seo.og_type }}">{% endif %}
             {% if seo.twitter_card %}<meta name="twitter:card" content="{{ seo.twitter_card }}">{% endif %}
             {% if seo.twitter_image %}<meta name="twitter:image" content="{{ seo.twitter_image }}">{% endif %}
-            {% if seo.json_ld %}<script type="application/ld+json">{{ seo.json_ld|safe }}</script>{% endif %}
+            {% if seo.json_ld %}<script type="application/ld+json">{{ seo.json_ld|replace('<', '\\u003c')|replace('>', '\\u003e')|replace('&', '\\u0026')|safe }}</script>{% endif %}
         {% endif %}
     {% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}">

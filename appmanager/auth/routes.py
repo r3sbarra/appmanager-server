@@ -31,6 +31,10 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 def is_debug_login_enabled() -> bool:
     import os
 
+    env_name = str(current_app.config.get("ENV", "development")).strip().lower()
+    if env_name in ("production", "prod") and not current_app.config.get("TESTING"):
+        return False
+
     cfg = current_app.config.get("DEBUG_LOGIN")
     if cfg is not None:
         return bool(cfg)

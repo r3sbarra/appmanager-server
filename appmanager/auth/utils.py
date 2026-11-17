@@ -143,10 +143,7 @@ def create_magic_link(email):
     db.session.add(magic_token)
     db.session.commit()
 
-    if request:
-        base_url = request.host_url.rstrip("/")
-    else:
-        base_url = current_app.config["APP_BASE_URL"].rstrip("/")
+    base_url = current_app.config["APP_BASE_URL"].rstrip("/")
 
     verify_url = f"{base_url}/auth/verify-magic?token={token_str}"
 

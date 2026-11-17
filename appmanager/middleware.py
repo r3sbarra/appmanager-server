@@ -392,7 +392,13 @@ class DynamicAppDispatcherMiddleware:
             tags.append(f'<meta name="robots" content="{self._esc(robots)}">')
 
         if seo.get("json_ld"):
-            tags.append(f'<script type="application/ld+json">{seo["json_ld"]}</script>')
+            safe_json_ld = (
+                str(seo["json_ld"])
+                .replace("<", "\\u003c")
+                .replace(">", "\\u003e")
+                .replace("&", "\\u0026")
+            )
+            tags.append(f'<script type="application/ld+json">{safe_json_ld}</script>')
 
         return "\n    ".join(tags)
 
