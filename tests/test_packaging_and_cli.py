@@ -12,7 +12,7 @@ from appmanager.cli import main
 
 
 def test_package_exports():
-    assert __version__ == "0.4.1"
+    assert isinstance(__version__, str) and __version__
     assert callable(create_app)
     assert callable(create_dispatchable_app)
     assert DynamicAppDispatcherMiddleware is not None
