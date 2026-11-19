@@ -1,11 +1,14 @@
+import logging
 import secrets
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import wraps
+from typing import Optional
 
 import jwt
+import requests
 from flask import current_app, flash, g, redirect, request, url_for
 
 from appmanager.database import db
@@ -191,3 +194,35 @@ def send_magic_link_email(email, magic_url):
         print(f"Target Email: {email}")
         print(f"Login URL:    {magic_url}")
         print("==============================================================\n")
+
+
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+_auth_logger = logging.getLogger("appmanager.auth")
+
+
+def is_turnstile_enabled() -> bool:
+    """Return True when both Turnstile site and secret keys are configured."""
+    site_key = str(current_app.config.get("TURNSTILE_SITE_KEY") or "").strip()
+    secret_key = str(current_app.config.get("TURNSTILE_SECRET_KEY") or "").strip()
+    return bool(site_key and secret_key)
+
+
+def verify_turnstile_token(token: str, remote_ip: Optional[str] = None) -> bool:
+    """Verify a Cloudflare Turnstile response token via the siteverify API."""
+    token = (token or "").strip()
+    secret_key = str(current_app.config.get("TURNSTILE_SECRET_KEY") or "").strip()
+    if not token or not secret_key:
+        return False
+
+    payload = {"secret": secret_key, "response": token}
+    if remote_ip:
+        payload["remoteip"] = remote_ip
+
+    try:
+        resp = requests.post(TURNSTILE_VERIFY_URL, data=payload, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        return bool(data.get("success"))
+    except Exception as exc:
+        _auth_logger.warning("Turnstile verification request failed: %s", exc)
+        return False

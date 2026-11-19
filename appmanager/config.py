@@ -70,6 +70,10 @@ class Config:
         "GOOGLE_DISCOVERY_URL", "https://accounts.google.com/.well-known/openid-configuration"
     )
 
+    # Cloudflare Turnstile (Optional - enabled automatically when both keys are set)
+    TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "").strip()
+    TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+
     # SMTP Settings (Optional, logs to console if empty)
     SMTP_SERVER = os.getenv("SMTP_SERVER", "")
     SMTP_PORT = int(os.getenv("SMTP_PORT", 587))

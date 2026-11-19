@@ -18,6 +18,8 @@ def app():
             "TEMP_UPLOAD_DIR": "/tmp/test_uploads",
             "BASE_DIR": "/tmp",
             "ALLOW_DEV_MAGIC_LOGIN": True,  # Default to True in base test fixture
+            "TURNSTILE_SITE_KEY": "",
+            "TURNSTILE_SECRET_KEY": "",
         }
     )
     with app.app_context():
@@ -198,3 +200,121 @@ def test_debug_login_disabled_when_config_false(client, app):
     res = client.get("/auth/debug-login", follow_redirects=False)
     assert res.status_code == 302
     assert "/auth/login" in res.headers.get("Location", "")
+
+
+def test_turnstile_not_rendered_when_unconfigured(client, app):
+    """Turnstile widget is omitted when TURNSTILE_SITE_KEY / SECRET_KEY are unset."""
+    res = client.get("/auth/login")
+    assert res.status_code == 200
+    assert b"cf-turnstile" not in res.data
+
+
+def test_turnstile_rendered_and_enforced_when_configured(client, app, monkeypatch):
+    """When Turnstile keys are configured, the widget renders and verification is enforced."""
+    app.config["TURNSTILE_SITE_KEY"] = "test-site-key"
+    app.config["TURNSTILE_SECRET_KEY"] = "test-secret-key"
+    app.config["ALLOW_DEV_MAGIC_LOGIN"] = True
+
+    # 1. Login page includes widget and script
+    res_login = client.get("/auth/login")
+    assert res_login.status_code == 200
+    assert b"cf-turnstile" in res_login.data
+    assert b"test-site-key" in res_login.data
+    assert b"challenges.cloudflare.com/turnstile/v0/api.js" in res_login.data
+
+    from tests.csrf_helpers import post_with_csrf
+
+    # 2. Missing token is rejected without creating a magic link
+    res_missing = post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={"email": "missing-captcha@example.com", "accept_terms": "true"},
+        follow_redirects=True,
+        remote_addr="127.0.0.10",
+    )
+    assert res_missing.status_code == 200
+    assert b"Please complete the CAPTCHA verification" in res_missing.data
+    with app.app_context():
+        assert MagicLinkToken.query.filter_by(email="missing-captcha@example.com").first() is None
+
+    # 3. Failed siteverify response is rejected
+    class _FakeResp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    monkeypatch.setattr(
+        "appmanager.auth.utils.requests.post",
+        lambda *args, **kwargs: _FakeResp({"success": False}),
+    )
+    res_failed = post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={
+            "email": "failed-captcha@example.com",
+            "accept_terms": "true",
+            "cf-turnstile-response": "bad-token",
+        },
+        follow_redirects=True,
+        remote_addr="127.0.0.11",
+    )
+    assert res_failed.status_code == 200
+    assert b"Please complete the CAPTCHA verification" in res_failed.data
+    with app.app_context():
+        assert MagicLinkToken.query.filter_by(email="failed-captcha@example.com").first() is None
+
+    # 4. Network exception during siteverify fails closed
+    def _raise_network_error(*args, **kwargs):
+        raise RuntimeError("network timeout")
+
+    monkeypatch.setattr("appmanager.auth.utils.requests.post", _raise_network_error)
+    res_err = post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={
+            "email": "error-captcha@example.com",
+            "accept_terms": "true",
+            "cf-turnstile-response": "some-token",
+        },
+        follow_redirects=True,
+        remote_addr="127.0.0.12",
+    )
+    assert res_err.status_code == 200
+    assert b"Please complete the CAPTCHA verification" in res_err.data
+    with app.app_context():
+        assert MagicLinkToken.query.filter_by(email="error-captcha@example.com").first() is None
+
+    # 5. Valid siteverify response allows magic link creation
+    captured = {}
+
+    def _fake_post(url, data=None, timeout=None):
+        captured["url"] = url
+        captured["data"] = data
+        captured["timeout"] = timeout
+        return _FakeResp({"success": True})
+
+    monkeypatch.setattr("appmanager.auth.utils.requests.post", _fake_post)
+    res_ok = post_with_csrf(
+        client,
+        "/auth/magic-link",
+        data={
+            "email": "valid-captcha@example.com",
+            "accept_terms": "true",
+            "cf-turnstile-response": "good-token",
+        },
+        remote_addr="127.0.0.13",
+    )
+    assert res_ok.status_code == 200
+    assert b"Developer Mode Preview" in res_ok.data
+    assert captured["data"] == {
+        "secret": "test-secret-key",
+        "response": "good-token",
+        "remoteip": "127.0.0.13",
+    }
+    with app.app_context():
+        assert MagicLinkToken.query.filter_by(email="valid-captcha@example.com").first() is not None

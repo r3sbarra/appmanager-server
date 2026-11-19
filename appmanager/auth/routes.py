@@ -18,7 +18,9 @@ from appmanager.auth.utils import (
     create_magic_link,
     generate_jwt,
     get_current_user,
+    is_turnstile_enabled,
     login_required,
+    verify_turnstile_token,
 )
 from appmanager.database import db
 from appmanager.models import InstalledApp, MagicLinkToken, User, UserAppPermission
@@ -68,6 +70,9 @@ def login():
         "auth/login.html",
         next=next_url,
         google_configured=google_configured,
+        turnstile_site_key=current_app.config.get("TURNSTILE_SITE_KEY", "")
+        if is_turnstile_enabled()
+        else "",
         debug_login_enabled=debug_login_enabled,
         debug_users=debug_users,
     )
@@ -185,6 +190,12 @@ def request_magic_link():
     if not email or "@" not in email:
         flash("Please enter a valid email address.", "warning")
         return redirect(url_for("auth.login", next=next_url))
+
+    if is_turnstile_enabled():
+        turnstile_token = request.form.get("cf-turnstile-response", "")
+        if not verify_turnstile_token(turnstile_token, client_ip):
+            flash("Please complete the CAPTCHA verification and try again.", "warning")
+            return redirect(url_for("auth.login", next=next_url))
 
     smtp_configured = bool(current_app.config.get("SMTP_SERVER"))
     allow_dev_magic = current_app.config.get("ALLOW_DEV_MAGIC_LOGIN", False)
